@@ -19,14 +19,10 @@ Created on Mon May 31 08:49:47 2021
 #       nidaqmx.constants.DigitalDriveType.ACTIVE_DRIVE (= 12573)
 
 import sys
-# from PySide2.QtCore import Qt
-# from PySide2.QtGui import QDoubleValidator
-# from PySide2.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
-#     QCheckBox, QLabel, QLineEdit, QScrollArea
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QDoubleValidator
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
-    QCheckBox, QLabel, QLineEdit, QScrollArea
+    QLabel, QLineEdit, QScrollArea, QPushButton
 
 
 import time
@@ -34,6 +30,11 @@ import nidaqmx  # pip install nidaqmx
 import threading
 import numpy as np
 
+kVmon_ID = "Dev1/ai0"
+mAmon_ID = "Dev1/ai4"
+kVset_ID = "Dev1/ao0"
+mAset_ID = "Dev1/ao1"
+interlock_ID = "Dev1/port2/line0"
 
 
 class XEnA_tube_gui(QWidget):
@@ -50,7 +51,11 @@ class XEnA_tube_gui(QWidget):
         self.label_main = QLabel("XEnA Source Control")
         layout_main.addWidget(self.label_main)
         
-        self.switch_interlock = QCheckBox("Interlock (on=photons, off=no photons)")
+        # self.switch_interlock = QCheckBox("Interlock (on=photons, off=no photons)")
+        self.switch_interlock = QPushButton()
+        self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
+        self.switch_interlock.setIconSize(QSize(300, 150))
+        self.interlock_state = False #TODO: we actually want to poll the nidaq for the current state...
         layout_interlock.addWidget(self.switch_interlock)
         layout_main.addLayout(layout_interlock)
         
@@ -106,7 +111,7 @@ class XEnA_tube_gui(QWidget):
         
         
         # event handling
-        self.switch_interlock.stateChanged.connect(self.toggle_interlock) # toggle interlock on or off
+        self.switch_interlock.clicked.connect(self.toggle_interlock) # toggle interlock on or off
         self.field_kVset.returnPressed.connect(self.set_voltage)
         self.field_mAset.returnPressed.connect(self.set_current)
 
@@ -121,10 +126,10 @@ class XEnA_tube_gui(QWidget):
         time.sleep(7) #have to sleep a while here to give rest of GUI time to spawn
         try:
             with nidaqmx.Task() as task:
-                task.ai_channels.add_ai_voltage_chan("Dev1/ai0") #kV monitor
+                task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
                 task.read()
             with nidaqmx.Task() as task:
-                task.ai_channels.add_ai_voltage_chan("Dev1/ai1") #mA monitor
+                task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
                 task.read()
         except Exception as ex:
             self.add_message("----------------")
@@ -137,29 +142,31 @@ class XEnA_tube_gui(QWidget):
         while self.monitor == True:
             for i in range(10): #display an averaged value of 10 measurements within approx 1s.
                 with nidaqmx.Task() as task:
-                    task.ai_channels.add_ai_voltage_chan("Dev1/ai0") #kV monitor
+                    task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
                     voltage[i] = task.read()/10.*50.
                 with nidaqmx.Task() as task:
-                    task.ai_channels.add_ai_voltage_chan("Dev1/ai1") #mA monitor
+                    task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
                     current[i] = task.read()/10.*2.
                 time.sleep(0.1)
             self.field_mAmon.setText("{:.3f}".format(np.average(current)))
             self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
 
     def toggle_interlock(self):
-        if self.switch_interlock.isChecked() is True: # if interlock off, set voltage to 0. If on set voltage to 5
-            state = True
+        if self.interlock_state is False: # if interlock off, set voltage to 0. If on set voltage to 5
+            self.interlock_state = True
+            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
         else:
-            state = False
+            self.interlock_state = False
+            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
             self.field_kVset.setText("{:.3f}".format(0.))
             self.field_mAset.setText("{:.3f}".format(0.))
-            self.ramp_voltage(0., "Dev1/ao0", "Dev1/ai0")
-            self.ramp_voltage(0., "Dev1/ao1", "Dev1/ai1")
+            self.ramp_voltage(0., kVset_ID, kVmon_ID)
+            self.ramp_voltage(0., mAset_ID, mAmon_ID)
 
         try:            
             with nidaqmx.Task() as task:
-                task.do_channels.add_do_chan("Dev1/port2/line0")
-                task.write(state, auto_start=True)
+                task.do_channels.add_do_chan(interlock_ID)
+                task.write(self.interlock_state, auto_start=True)
         except Exception as ex:
             self.add_message("----------------")
             self.add_message(str(ex))
@@ -174,11 +181,11 @@ class XEnA_tube_gui(QWidget):
         if voltage < 0.:
             voltage = 0.
             self.field_kVset.setText("{:.3f}".format(0.))
-        if voltage > 10:
-            voltage = 10.
+        if voltage > 8:  #voltage limited to 40kV
+            voltage = 8.
             self.field_kVset.setText("{:.3f}".format(50.))
 
-        if self.ramp_voltage(voltage, "Dev1/ao0", "Dev1/ai0") == True:
+        if self.ramp_voltage(voltage, kVset_ID, kVmon_ID) == True:
             self.add_message("Tube voltage set to "+self.field_kVset.text()+"kV")
             return True
         else:
@@ -188,15 +195,15 @@ class XEnA_tube_gui(QWidget):
     def set_current(self):
         value = float(self.field_mAset.text())
         # ramp up voltage certain timeframe (e.g. 50s for 0-10V; 0.2V/s)
-        voltage = value/2.*10. #0V=0mA; 10V=2mA
-        if voltage < 0.:
-            voltage = 0.
+        current = value/2.*10. #0V=0mA; 10V=2mA
+        if current < 0.:
+            current = 0.
             self.field_mAset.setText("{:.3f}".format(0.))
-        if voltage > 10:
-            voltage = 10.
+        if current > 10:
+            current = 10.
             self.field_mAset.setText("{:.3f}".format(2.))
         
-        if self.ramp_voltage(voltage, "Dev1/ao1", "Dev1/ai1") == True:
+        if self.ramp_voltage(current, mAset_ID, mAmon_ID) == True:
             self.add_message("Tube current set to "+self.field_mAset.text()+"mA")
             return True
         else:
@@ -220,7 +227,7 @@ class XEnA_tube_gui(QWidget):
                 with nidaqmx.Task() as task:
                     task.ao_channels.add_ao_voltage_chan(address_set)
                     task.write(set_voltage[i], auto_start=True)
-                time.sleep(1)
+                time.sleep(2)
                
             with nidaqmx.Task() as task:
                 task.ao_channels.add_ao_voltage_chan(address_set)
