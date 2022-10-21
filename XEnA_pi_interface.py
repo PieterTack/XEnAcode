@@ -5,7 +5,7 @@ Created on Mon Aug 19 09:48:43 2019
 @author: prrta
 """
 
-from pipython import GCSDevice, pitools
+from pipython import GCSDevice, pitools #see PIPython-1.3.4.17/docs/html/a00009.html
 import json
 
 STAGES = ('M-414.3PD',)  # connect stages to axes
@@ -33,6 +33,9 @@ class Pidevice():
             self.device.ConnectUSB(serialnum=stagedict['usb'])
         self.device.CLR() #reset motor
         self.device.SVO(self.device.axes, values=True) # switches on servo
+        self.device.VCO(self.device.axes, values=True) # switches on velocity control
+        self.device.VEL(self.device.axes, values=stagedict['velocity'])
+        
         
         # print('connected: {}'.format(self.device.qIDN().strip()))
         
@@ -41,6 +44,7 @@ class Pidevice():
         self.stage = stagedict['stage']
         self.controller = stagedict['controller']
         self.lastpos = stagedict['lastpos']
+        self.velocity = stagedict['velocity']
 
 def XEnA_pi_init():
     pidevices = list('')
@@ -48,7 +52,6 @@ def XEnA_pi_init():
     stagedict = XEnA_read_dict('lib/stages.json')
     for stage in stagedict:
         pidevices.append(Pidevice(stage))
-        # pidevices.append(Pidevice('C-863.11', None,'dummy'))
 
     # home motors
     for i in range(len(pidevices)):
@@ -75,6 +78,7 @@ def XEnA_store_dict(pidevices, outfile='lib/stages.json'):
             'stage' : dev.stage,
             'usb': dev.usb,
             'lastpos' : dev.lastpos,
+            'velocity' : dev.velocity,
             'uname': dev.uname})
 
     with open(outfile, 'w+') as error:
@@ -103,47 +107,64 @@ def XEnA_move(_pidevice, target):
     #             break
 
 
+
+#Useful commands:
+    # pidevice.HLT() #Halt the motion of given 'axes' smoothly.
+    # pidevice.JOG() #Start motion with the given (constant) velocity for 'axes'
+    # pidevice.MNL()/MPL() #Move 'axes' to negative/positive limit switch.
+    # pidevice.RBT() #Reboot controller, error check will be disabled temporarily.
+    # pidevice.REF() #Reference 'axes'.
+    # pidevice.StopAll() (or STP()) #Stop all axes abruptly (by sending "#24")
+    
+
 # stagedict = [
-#     {'controller': "C-863.11",
-#      'stage' : "M-061.DG",
-#      'usb': "0021550017",
-#      'lastpos' : 0,
-#      'uname': "srcr"},
+#     {'controller': "C-863",
+#       'stage' : "M-061.DG",
+#       'usb': "0021550017",
+#       'lastpos' : 0,
+#       'velocity' : 5,
+#       'uname': "srcr"},
     
 #     {'controller': "C-863.11",
-#      'stage' : "M-414.3PD",
-#      'lastpos' : 150,
-#      'usb': "0195500269",
-#      'uname': "srcx"},
+#       'stage' : "M-414.3PD",
+#       'usb': "0195500269",
+#       'lastpos' : 150,
+#       'velocity' : 10,
+#       'uname': "srcx"},
     
 #     {'controller': "C-863.11",
-#      'stage' : "M-414.3PD",
-#      'lastpos' : 150,
-#      'usb': "0195500299",
-#      'uname': "detx"},
+#       'stage' : "M-414.3PD",
+#       'usb': "0195500299",
+#       'lastpos' : 150,
+#       'velocity' : 10,
+#       'uname': "detx"},
     
 #     {'controller': "C-663.11",
-#      'stage' : "M-404.42S",
-#      'lastpos' : 50,
-#      'usb': "0020550162",
-#      'uname': "cryy"},
+#       'stage' : "M-404.42S",
+#       'usb': "0020550162",
+#       'lastpos' : 50,
+#       'velocity' : 1.5,
+#       'uname': "cryy"},
     
 #     {'controller': "C-663.11",
-#      'stage' : "M-404.42S",
-#      'lastpos' : 50,
-#      'usb': "0020550164",
-#      'uname': "cryz"},
+#       'stage' : "M-404.42S",
+#       'usb': "0020550164",
+#       'lastpos' : 50,
+#       'velocity' : 1.5,
+#       'uname': "cryz"},
     
 #     {'controller': "C-663.11",
-#      'stage' : "64439200",
-#      'lastpos' : 0,
-#      'usb': "0020550169",
-#      'uname': "cryr"},
+#       'stage' : "64439200",
+#       'usb': "0020550169",
+#       'lastpos' : 0,
+#       'velocity' : 5,
+#       'uname': "cryr"},
     
-#     {'controller': "C-663.11",
-#      'stage' : "65409200-0000",
-#      'lastpos' : 0,
-#      'usb': "0021550047",
-#      'uname': "cryt"}
+#     {'controller': "C-663.12",
+#       'stage' : "65409200-0000",
+#       'usb': "0021550047",
+#       'lastpos' : 0,
+#       'velocity' : 1.5,
+#       'uname': "cryt"}
 #     ]
 
