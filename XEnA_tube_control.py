@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
 
 
 import time
-import nidaqmx  # pip install nidaqmx
+import nidaqmx  # pip install nidaqmx, https://itom.bitbucket.io/plugindoc/plugins/ad-converters/niDAQmx.html
 import threading
 import numpy as np
 
