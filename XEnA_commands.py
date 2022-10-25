@@ -13,18 +13,29 @@ R_CRYSTAL = 50. # cm
 D_SI440 = 0.960 # Angstrom
 D_SI331 = 1.246 # Angstrom
 
+
+# initiate PI devices and generate local variables for each device uname
+devices = XEnA_pi_interface.XEnA_pi_init()
+myVars = locals()
+for dev in devices:
+    myVars[dev.uname] = dev.device
+energy = 'energy' #define a virtual device called energy
+
 # depending on cmd_base, call different functions to execute
 def wm(_pidevice):
     return _pidevice.qPOS(_pidevice.axes).get("1")
 
-def wall(_pidevices):
+def wall():
     pos = list('')
-    for i in range(len(_pidevices)):
-        pos.append(_pidevices[i].qPOS(_pidevices[i].axes).get("1"))
+    for dev in devices:
+        pos.append(dev.qPOS(dev.axes).get("1"))
     return pos
     
 def mv(_pidevice, pos):
-    XEnA_pi_interface.XEnA_pi_move(_pidevice, pos)
+    if _pidevice == 'energy':
+        pass #TODO: Jasper's code
+    else:
+        XEnA_pi_interface.XEnA_move(_pidevice, pos)
 
 def mvr(_pidevice, step):
     goto_pos = list('')
@@ -80,160 +91,160 @@ def find_motor_id(_pidevices, uname):
     return -1
         
 
-def do(_pidevices, commands, verbal=None):
-    # first disect command in its single parts
-    #   several commands can be split by semicolon
-    commands = commands.split(';')
-    for i in range(len(commands)):
-        # go over command and dissect it. The main command is the first 'word' in the string
-        command = commands[i].split(' ')    
-        # identify, validate and send proper commands
-        if command[0] == 'wm':
-            # this command can be followed by any amount of motor names.
-            if len(command) <= 1:
-                syntax = "Syntax Help: Please provide a motor name.\n    wm <name>"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-            else:
-                #   verify motor names, and return values
-                val_names = list('')
-                val_pos = list('')
-                for j in range(1,len(command)):
-                    mot_id = find_motor_id(_pidevices, command[j])
-                    if mot_id != -1:
-                        val_names.append(command[j])
-                        val_pos.append(wm(_pidevices[mot_id].device))
-                # return message to terminal
-                if verbal:
-                    verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
-                    verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
+# def do(_pidevices, commands, verbal=None):
+#     # first disect command in its single parts
+#     #   several commands can be split by semicolon
+#     commands = commands.split(';')
+#     for i in range(len(commands)):
+#         # go over command and dissect it. The main command is the first 'word' in the string
+#         command = commands[i].split(' ')    
+#         # identify, validate and send proper commands
+#         if command[0] == 'wm':
+#             # this command can be followed by any amount of motor names.
+#             if len(command) <= 1:
+#                 syntax = "Syntax Help: Please provide a motor name.\n    wm <name>"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#             else:
+#                 #   verify motor names, and return values
+#                 val_names = list('')
+#                 val_pos = list('')
+#                 for j in range(1,len(command)):
+#                     mot_id = find_motor_id(_pidevices, command[j])
+#                     if mot_id != -1:
+#                         val_names.append(command[j])
+#                         val_pos.append(wm(_pidevices[mot_id].device))
+#                 # return message to terminal
+#                 if verbal:
+#                     verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
+#                     verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
             
-        elif command[0] == 'wall':
-            val_names = list('')
-            for j in range(len(_pidevices)):
-                val_names.append(_pidevices[j].uname)
-            devs = list('')
-            for dev in _pidevices:
-                devs.append(dev.device)
-            val_pos = wall(devs)
-            # return message to terminal
-            if verbal:
-                verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
-                verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
+#         elif command[0] == 'wall':
+#             val_names = list('')
+#             for j in range(len(_pidevices)):
+#                 val_names.append(_pidevices[j].uname)
+#             devs = list('')
+#             for dev in _pidevices:
+#                 devs.append(dev.device)
+#             val_pos = wall(devs)
+#             # return message to terminal
+#             if verbal:
+#                 verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
+#                 verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
             
-        elif command[0] == 'wa':
-            val_names = list('')
-            for j in range(len(_pidevices)):
-                val_names.append(_pidevices[j].uname)
-            devs = list('')
-            for dev in _pidevices:
-                devs.append(dev.device)
-            val_pos = wall(devs)
-            # return message to terminal
-            if verbal:
-                verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
-                verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
+#         elif command[0] == 'wa':
+#             val_names = list('')
+#             for j in range(len(_pidevices)):
+#                 val_names.append(_pidevices[j].uname)
+#             devs = list('')
+#             for dev in _pidevices:
+#                 devs.append(dev.device)
+#             val_pos = wall(devs)
+#             # return message to terminal
+#             if verbal:
+#                 verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
+#                 verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
             
-        elif command[0] == 'mv':
-            # mv is followed by motor name and float
-            if len(command) <= 2:
-                syntax = "Syntax Help: Please provide a motor name and position.\n    mv <name> <position>"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-            #   i.e. mv samx 0 samy 0
-            else:
-                devs = list('')
-                pos = list('')
-                for j in range(1,len(command),2):
-                    mot_id = find_motor_id(_pidevices, command[j])
-                    if mot_id != -1:
-                        devs.append(_pidevices[mot_id].device)
-                        pos.append(float(command[j+1]))
-                mv(devs, pos)
+#         elif command[0] == 'mv':
+#             # mv is followed by motor name and float
+#             if len(command) <= 2:
+#                 syntax = "Syntax Help: Please provide a motor name and position.\n    mv <name> <position>"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#             #   i.e. mv samx 0 samy 0
+#             else:
+#                 devs = list('')
+#                 pos = list('')
+#                 for j in range(1,len(command),2):
+#                     mot_id = find_motor_id(_pidevices, command[j])
+#                     if mot_id != -1:
+#                         devs.append(_pidevices[mot_id].device)
+#                         pos.append(float(command[j+1]))
+#                 mv(devs, pos)
             
-        elif command[0] == 'mvr':
-            # mvr is followed by motor name and float
-            if len(command) <= 2:
-                syntax = "Syntax Help: Please provide a motor name and relative distance.\n    mvr <name> <dist>"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-                #   i.e. mvr samx 10 samy -10
-            else:
-                devs = list('')
-                steps = list('')
-                for j in range(1,len(command),2):
-                    mot_id = find_motor_id(_pidevices, command[j])
-                    if mot_id != -1:
-                        devs.append(_pidevices[mot_id].device)
-                        steps.append(float(command[j+1]))
-                mvr(devs, steps)
+#         elif command[0] == 'mvr':
+#             # mvr is followed by motor name and float
+#             if len(command) <= 2:
+#                 syntax = "Syntax Help: Please provide a motor name and relative distance.\n    mvr <name> <dist>"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#                 #   i.e. mvr samx 10 samy -10
+#             else:
+#                 devs = list('')
+#                 steps = list('')
+#                 for j in range(1,len(command),2):
+#                     mot_id = find_motor_id(_pidevices, command[j])
+#                     if mot_id != -1:
+#                         devs.append(_pidevices[mot_id].device)
+#                         steps.append(float(command[j+1]))
+#                 mvr(devs, steps)
 
-        elif command[0] == 'ascan':
-            # ascan is followed by motor name, start, end, nstep, time
-            #   i.e. ascan samx 0 10 5 1
-            if len(command) != 6:
-                syntax = "Syntax Help: Please provide a motor name, start position, end position, amount of steps and acquisition time.\n    ascan <name> <start> <stop> <# steps> <time>"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-            else:
-                mot_id = find_motor_id(_pidevices, command[1])
-                if mot_id != -1:
-                    ascan(_pidevices[mot_id].device, float(command[2]), float(command[3]), float(command[4]), float(command[5]))
+#         elif command[0] == 'ascan':
+#             # ascan is followed by motor name, start, end, nstep, time
+#             #   i.e. ascan samx 0 10 5 1
+#             if len(command) != 6:
+#                 syntax = "Syntax Help: Please provide a motor name, start position, end position, amount of steps and acquisition time.\n    ascan <name> <start> <stop> <# steps> <time>"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#             else:
+#                 mot_id = find_motor_id(_pidevices, command[1])
+#                 if mot_id != -1:
+#                     ascan(_pidevices[mot_id].device, float(command[2]), float(command[3]), float(command[4]), float(command[5]))
             
-        elif command[0] == 'dscan':
-            # dscan is followed by motor name, rstart, rend, nstep, time
-            #   i.e. dscan samx -10 10 5 1
-            if len(command) != 6:
-                syntax = "Syntax Help: Please provide a motor name, relative start position, relative end position, amount of steps and acquisition time.\n    dscan <name> <rel. start> <rel. stop> <# steps> <time>"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-            else:
-                mot_id = find_motor_id(_pidevices, command[1])
-                if mot_id != -1:
-                    dscan(_pidevices[mot_id].device, float(command[2]), float(command[3]), float(command[4]), float(command[5]))
+#         elif command[0] == 'dscan':
+#             # dscan is followed by motor name, rstart, rend, nstep, time
+#             #   i.e. dscan samx -10 10 5 1
+#             if len(command) != 6:
+#                 syntax = "Syntax Help: Please provide a motor name, relative start position, relative end position, amount of steps and acquisition time.\n    dscan <name> <rel. start> <rel. stop> <# steps> <time>"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#             else:
+#                 mot_id = find_motor_id(_pidevices, command[1])
+#                 if mot_id != -1:
+#                     dscan(_pidevices[mot_id].device, float(command[2]), float(command[3]), float(command[4]), float(command[5]))
 
-        elif command[0] == 'mesh':
-            # mesh is followed by motor name, start, end, nstep, motor name2, start2, end2, nstep2, time
-            #   i.e. mesh samx 0 10 5 samz 0 10 5 1
-            if len(command) != 10:
-                syntax = "Syntax Help:\n    mesh <name1> <start1> <stop1> <# steps1> <name2> <start2> <stop2> <# steps2> <time>\n      <name1> is outer loop, <name2> is inner loop (moves most)"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-            else:
-                mot_id1 = find_motor_id(_pidevices, command[1])
-                mot_id2 = find_motor_id(_pidevices, command[5])
-                if mot_id1 != -1 and mot_id2 != -1 and mot_id1 != mot_id2:
-                    mesh(_pidevices[mot_id1].device, _pidevices[mot_id2].device, float(command[2]), float(command[3]), float(command[4]), float(command[6]), float(command[7]), float(command[8]), float(command[9]))
+#         elif command[0] == 'mesh':
+#             # mesh is followed by motor name, start, end, nstep, motor name2, start2, end2, nstep2, time
+#             #   i.e. mesh samx 0 10 5 samz 0 10 5 1
+#             if len(command) != 10:
+#                 syntax = "Syntax Help:\n    mesh <name1> <start1> <stop1> <# steps1> <name2> <start2> <stop2> <# steps2> <time>\n      <name1> is outer loop, <name2> is inner loop (moves most)"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#             else:
+#                 mot_id1 = find_motor_id(_pidevices, command[1])
+#                 mot_id2 = find_motor_id(_pidevices, command[5])
+#                 if mot_id1 != -1 and mot_id2 != -1 and mot_id1 != mot_id2:
+#                     mesh(_pidevices[mot_id1].device, _pidevices[mot_id2].device, float(command[2]), float(command[3]), float(command[4]), float(command[6]), float(command[7]), float(command[8]), float(command[9]))
                     
-        elif command[0] == 'dmesh':
-            # dmesh is followed by motor name, rstart, rend, nstep, motor name2, rstart2, rend2, nstep2, time
-            #   i.e. dmesh samx -10 10 5 samz 0 10 5 1
-            if len(command) != 10:
-                syntax = "Syntax Help:\n    dmesh <name1> <rel.start1> <rel.stop1> <# steps1> <name2> <rel.start2> <rel.stop2> <# steps2> <time>\n      <name1> is outer loop, <name2> is inner loop (moves most)"
-                print(syntax)
-                if verbal:
-                    verbal.add_output(syntax)
-            else:
-                mot_id1 = find_motor_id(_pidevices, command[1])
-                mot_id2 = find_motor_id(_pidevices, command[5])
-                if mot_id1 != -1 and mot_id2 != -1 and mot_id1 != mot_id2:
-                    dmesh(_pidevices[mot_id1].device, _pidevices[mot_id2].device, float(command[2]), float(command[3]), float(command[4]), float(command[6]), float(command[7]), float(command[8]), float(command[9]))
+#         elif command[0] == 'dmesh':
+#             # dmesh is followed by motor name, rstart, rend, nstep, motor name2, rstart2, rend2, nstep2, time
+#             #   i.e. dmesh samx -10 10 5 samz 0 10 5 1
+#             if len(command) != 10:
+#                 syntax = "Syntax Help:\n    dmesh <name1> <rel.start1> <rel.stop1> <# steps1> <name2> <rel.start2> <rel.stop2> <# steps2> <time>\n      <name1> is outer loop, <name2> is inner loop (moves most)"
+#                 print(syntax)
+#                 if verbal:
+#                     verbal.add_output(syntax)
+#             else:
+#                 mot_id1 = find_motor_id(_pidevices, command[1])
+#                 mot_id2 = find_motor_id(_pidevices, command[5])
+#                 if mot_id1 != -1 and mot_id2 != -1 and mot_id1 != mot_id2:
+#                     dmesh(_pidevices[mot_id1].device, _pidevices[mot_id2].device, float(command[2]), float(command[3]), float(command[4]), float(command[6]), float(command[7]), float(command[8]), float(command[9]))
 
-        elif command[0] == '':
-            if verbal:
-                verbal.add_output(command[0])
+#         elif command[0] == '':
+#             if verbal:
+#                 verbal.add_output(command[0])
 
-        else:
-            syntax = "ERROR: Unknown Command: "+ command[0]
-            print(syntax)
-            if verbal:
-                verbal.add_output(syntax)
+#         else:
+#             syntax = "ERROR: Unknown Command: "+ command[0]
+#             print(syntax)
+#             if verbal:
+#                 verbal.add_output(syntax)
     
-        # somehow couple back info to terminal screen (e.g. would be nice to see umv update during move...)
+#         # somehow couple back info to terminal screen (e.g. would be nice to see umv update during move...)
     
