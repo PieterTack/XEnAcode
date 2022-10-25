@@ -26,18 +26,25 @@ class Pidevice():
         # _pidevice.ConnectUSB(serialnum='123456789')
         # _pidevice.ConnectTCPIP(ipaddress='192.168.178.42')
 
+
+        print("Connecting "+stagedict['uname']+"...")
+        print("    Serial: ",stagedict['usb'], "controller: ", stagedict['controller'], "stage: ", stagedict['stage'])
         self.device = GCSDevice(stagedict['controller'])
         if stagedict['uname'] == 'dummy':
             None
         else:
             self.device.ConnectUSB(serialnum=stagedict['usb'])
-        self.device.CLR() #reset motor
+        # self.device.CLR() #reset motor
+        print("    Switching on servo...")
         self.device.SVO(self.device.axes, values=True) # switches on servo
-        self.device.VCO(self.device.axes, values=True) # switches on velocity control
+        # print("    Switching on velocity control...")
+        # print(self.device.qVCO(axes=self.device.axes))
+        # self.device.VCO(self.device.axes, values=True) # switches on velocity control
+        print("    Setting velocity to ", stagedict['velocity'])
         self.device.VEL(self.device.axes, values=stagedict['velocity'])
         
         
-        # print('connected: {}'.format(self.device.qIDN().strip()))
+        print('connected: {}'.format(self.device.qIDN().strip()))
         
         self.uname = stagedict['uname']
         self.usb = stagedict['usb']
@@ -55,8 +62,7 @@ def XEnA_pi_init():
 
     # home motors
     for i in range(len(pidevices)):
-        print(pidevices[i].uname+", ", end=" ")
-        pidevices[i].device.FRF(pidevices[i].device.axes)  # find reference switch
+        # pidevices[i].device.FRF(pidevices[i].device.axes)  # find reference switch
         while True:
             if (pidevices[i].device.IsControllerReady()):
                 break
