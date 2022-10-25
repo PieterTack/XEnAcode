@@ -96,14 +96,9 @@ def XEnA_read_dict(dictfile):
     return stagedict
 
 def XEnA_move(_pidevice, target):
-    # make axes lis
-    axes = list('')
-    for i in range(len(_pidevice)):
-        axes.append(_pidevice[i].axes)
     # move motors
-    for i in range(len(_pidevice)):
-        _pidevice[i].MOV(axes[i], target[i])
-        pitools.waitontarget(_pidevice[i], axes=axes[i])
+    _pidevice.MOV(_pidevice.axes, target)
+    pitools.waitontarget(_pidevice, axes=_pidevice.axes)
 
     # for i in range(len(_pidevice)):
     #     while True:

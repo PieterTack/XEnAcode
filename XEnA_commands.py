@@ -13,18 +13,29 @@ R_CRYSTAL = 50. # cm
 D_SI440 = 0.960 # Angstrom
 D_SI331 = 1.246 # Angstrom
 
+
+# initiate PI devices and generate local variables for each device uname
+devices = XEnA_pi_interface.XEnA_pi_init()
+myVars = locals()
+for dev in devices:
+    myVars[dev.uname] = dev.device
+energy = 'energy' #define a virtual device called energy
+
 # depending on cmd_base, call different functions to execute
 def wm(_pidevice):
     return _pidevice.qPOS(_pidevice.axes).get("1")
 
-def wall(_pidevices):
+def wall():
     pos = list('')
-    for i in range(len(_pidevices)):
-        pos.append(_pidevices[i].qPOS(_pidevices[i].axes).get("1"))
+    for dev in devices:
+        pos.append(dev.qPOS(dev.axes).get("1"))
     return pos
     
 def mv(_pidevice, pos):
-    XEnA_pi_interface.XEnA_move(_pidevice, pos)
+    if _pidevice == 'energy':
+        pass #TODO: Jasper's code
+    else:
+        XEnA_pi_interface.XEnA_move(_pidevice, pos)
 
 def mvr(_pidevice, step):
     goto_pos = list('')
