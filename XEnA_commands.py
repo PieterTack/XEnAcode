@@ -8,10 +8,13 @@ This code handles the XasXes commands, as supplied by the xx_terminal
 
 import XEnA_pi_interface
 import time as tm
+import numpy as np
+import math
 
-R_CRYSTAL = 50. # cm
+R_CRYSTAL = 500. # mm
 D_SI440 = 0.960 # Angstrom
 D_SI331 = 1.246 # Angstrom
+HC = 12.4 # keV*A
 
 
 # initiate PI devices and generate local variables for each device uname
@@ -31,9 +34,21 @@ def wall():
         pos.append(dev.qPOS(dev.axes).get("1"))
     return pos
     
-def mv(_pidevice, pos):
+def mv(_pidevice, pos, d = D_SI440): #'pos' in keV, 'd' in Angstrom
     if _pidevice == 'energy':
-        pass #TODO: Jasper's code
+        sin_ang = HC/(2*pos*d)
+        if -1 < sin_ang < 1: 
+            ang_rad = np.arcsin(sin_ang)
+            ang_deg = ang_rad * 180/math.pi
+            dist = R_CRYSTAL/math.tan(ang_rad)
+            if 95 < dist < 366:
+                srcx_mv = 366 - dist
+                detx_mv = srcx_mv + 27
+                print("Source angle = " + "{:.4f}".format(ang_deg) + "\n" + "Source translation = " + "{:.4f}".format(srcx_mv) + "\n" + "Detector translation = " + "{:.4f}".format(detx_mv))
+            else:
+                print("Invalid setup, position not reachable")
+        else:
+            print("Invalid setup, unobtainable Bragg angle")
     else:
         XEnA_pi_interface.XEnA_move(_pidevice, pos)
 
