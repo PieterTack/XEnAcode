@@ -6,15 +6,16 @@ Created on Tue Aug 13 10:05:01 2019
 This code handles the XasXes commands, as supplied by the xx_terminal
 """
 
-import XEnA_pi_interface
+import numpy as np
 import time as tm
 import atexit
+import XEnA_pi_interface
 # import signal
 
-R_CRYSTAL = 50. # cm
+R_CRYSTAL = 500. # mm
 D_SI440 = 0.960 # Angstrom
 D_SI331 = 1.246 # Angstrom
-
+HC = 12.4 # keV*A
 
 
 # depending on cmd_base, call different functions to execute
@@ -42,9 +43,21 @@ def wall():
 def wa():
     wall()
     
-def mv(_pidevice, pos):
+def mv(_pidevice, pos, d = D_SI440): #'pos' in keV, 'd' in Angstrom
     if _pidevice == 'energy':
-        pass #TODO: Jasper's code
+        sin_ang = HC/(2*pos*d)
+        if -1 < sin_ang < 1: 
+            ang_rad = np.arcsin(sin_ang)
+            ang_deg = ang_rad * 180/np.pi
+            dist = R_CRYSTAL/np.tan(ang_rad)
+            if 95 < dist < 366:
+                srcx_mv = 366 - dist
+                detx_mv = srcx_mv + 27
+                print("Source angle = " + "{:.4f}".format(ang_deg) + "\n" + "Source translation = " + "{:.4f}".format(srcx_mv) + "\n" + "Detector translation = " + "{:.4f}".format(detx_mv))
+            else:
+                print("Invalid setup, position not reachable")
+        else:
+            print("Invalid setup, unobtainable Bragg angle")
     else:
         XEnA_pi_interface.XEnA_move(_pidevice, pos)
 
@@ -261,8 +274,7 @@ def find_motor_id(_pidevices, uname):
 #           print(f"{count}", end="\r", flush=True)
 
 if __name__ == "__main__":
-    
-    # initiate PI devices and generate local variables for each device uname
+        # initiate PI devices and generate local variables for each device uname
     devices = XEnA_pi_interface.XEnA_pi_init()
     myVars = locals()
     for dev in devices:
@@ -271,5 +283,4 @@ if __name__ == "__main__":
 
     atexit.register(XEnA_pi_interface.XEnA_close, devices) #on exit of program should close all connections
     #TODO: signal.signal(signal.SIGINT, handle_ctrlc) #stop motors
-
     
