@@ -6,10 +6,12 @@ Created on Tue Aug 13 10:05:01 2019
 This code handles the XasXes commands, as supplied by the xx_terminal
 """
 
-import XEnA_pi_interface
-import time as tm
 import numpy as np
-import math
+import time as tm
+import atexit
+import XEnA_pi_interface
+# import signal
+
 
 R_CRYSTAL = 500. # mm
 D_SI440 = 0.960 # Angstrom
@@ -17,30 +19,38 @@ D_SI331 = 1.246 # Angstrom
 HC = 12.4 # keV*A
 
 
-# initiate PI devices and generate local variables for each device uname
-devices = XEnA_pi_interface.XEnA_pi_init()
-myVars = locals()
-for dev in devices:
-    myVars[dev.uname] = dev.device
-energy = 'energy' #define a virtual device called energy
-
 # depending on cmd_base, call different functions to execute
-def wm(_pidevice):
-    return _pidevice.qPOS(_pidevice.axes).get("1")
+def wm(*args):
+    if len(args) <= 1:
+        syntax = "Syntax Error: Please provide a motor name.\n    wm <name>"
+        raise SyntaxError(syntax)
+        return False
+    
+    positions = list('')
+    for _pidevice in args:
+        positions.append(_pidevice.qPOS(_pidevice.axes).get("1"))
+    print("\n    "+"".join(name.center(20) for name in str(args)))
+    print("    "+"".join(str("%.4f" % pos).center(15) for pos in positions)+'\n')
+    return True
 
 def wall():
-    pos = list('')
+    positions = list('')
     for dev in devices:
-        pos.append(dev.qPOS(dev.axes).get("1"))
-    return pos
+        positions.append(dev.qPOS(dev.axes).get("1"))
+    print("\n    "+"".join(name.center(20) for name in [devs.uname for devs in devices]))
+    print("    "+"".join(str("%.4f" % pos).center(15) for pos in positions)+'\n')
+    return True
+
+def wa():
+    wall()
     
 def mv(_pidevice, pos, d = D_SI440): #'pos' in keV, 'd' in Angstrom
     if _pidevice == 'energy':
         sin_ang = HC/(2*pos*d)
         if -1 < sin_ang < 1: 
             ang_rad = np.arcsin(sin_ang)
-            ang_deg = ang_rad * 180/math.pi
-            dist = R_CRYSTAL/math.tan(ang_rad)
+            ang_deg = ang_rad * 180/np.pi
+            dist = R_CRYSTAL/np.tan(ang_rad)
             if 95 < dist < 366:
                 srcx_mv = 366 - dist
                 detx_mv = srcx_mv + 27
@@ -262,4 +272,16 @@ def find_motor_id(_pidevices, uname):
 #                 verbal.add_output(syntax)
     
 #         # somehow couple back info to terminal screen (e.g. would be nice to see umv update during move...)
+#           print(f"{count}", end="\r", flush=True)
+
+if __name__ == "__main__":
+        # initiate PI devices and generate local variables for each device uname
+    devices = XEnA_pi_interface.XEnA_pi_init()
+    myVars = locals()
+    for dev in devices:
+        myVars[dev.uname] = dev.device
+    energy = 'energy' #define a virtual device called energy
+
+    atexit.register(XEnA_pi_interface.XEnA_close, devices) #on exit of program should close all connections
+    #TODO: signal.signal(signal.SIGINT, handle_ctrlc) #stop motors
     
