@@ -66,7 +66,6 @@ def XEnA_pi_init():
         while True:
             if (pidevices[i].device.IsControllerReady()):
                 break
-    #    pidevices[0].device.POS(pidevices[0].device.axes, 150)  # set center reference to value 150
     return pidevices
 
 
