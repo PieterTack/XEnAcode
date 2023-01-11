@@ -19,260 +19,175 @@ D_SI331 = 1.246 # Angstrom
 HC = 12.4 # keV*A
 
 
+def _arg_validity(*args):
+    for _pidevice in args:
+        myVars = locals().copy()
+        devicename = [i for i, j in myVars.items() if j == _pidevice][0]
+        if devicename not in myVars:
+            syntax = "Syntax Error: Unknown device <"+devicename+">"
+            raise SyntaxError(syntax)
+    return True
+    
+
 # depending on cmd_base, call different functions to execute
 def wm(*args):
-    if len(args) <= 1:
-        syntax = "Syntax Error: Please provide a motor name.\n    wm <name>"
+    '''Retreive the current position of the specified devices.\n    Syntax: wm(<name1> {, <name2>})'''
+    if len(args) < 1:
+        syntax = "Syntax Error: Please provide a motor name.\n    wm(<name1> {, <name2>})"
         raise SyntaxError(syntax)
-        return False
     
     positions = list('')
     for _pidevice in args:
-        positions.append(_pidevice.qPOS(_pidevice.axes).get("1"))
+        if _pidevice.device is None:
+            positions.append(_pidevice.lastpos)
+        else:
+            positions.append(_pidevice.device.qPOS(_pidevice.device.axes).get("1"))
     print("\n    "+"".join(name.center(20) for name in str(args)))
     print("    "+"".join(str("%.4f" % pos).center(15) for pos in positions)+'\n')
     return True
 
 def wall():
+    '''Retreive the current position of all devices.\n    Syntax: wall()'''
     positions = list('')
-    for dev in devices:
-        positions.append(dev.qPOS(dev.axes).get("1"))
+    for _pidevice in devices:
+        if _pidevice.device is None:
+            positions.append(_pidevice.lastpos)
+        else:
+            positions.append(_pidevice.device.qPOS(_pidevice.device.axes).get("1"))
     print("\n    "+"".join(name.center(20) for name in [devs.uname for devs in devices]))
     print("    "+"".join(str("%.4f" % pos).center(15) for pos in positions)+'\n')
     return True
 
 def wa():
+    '''Retreive the current position of all devices.\n    Syntax: wa()'''
     wall()
     
-def mv(_pidevice, pos, d = D_SI440): #'pos' in keV, 'd' in Angstrom
-    if _pidevice == 'energy':
-        sin_ang = HC/(2*pos*d)
-        if -1 < sin_ang < 1: 
-            ang_rad = np.arcsin(sin_ang)
-            ang_deg = ang_rad * 180/np.pi
-            dist = R_CRYSTAL/np.tan(ang_rad)
-            if 95 < dist < 366:
-                srcx_mv = 366 - dist
-                detx_mv = srcx_mv + 27
-                print("Source angle = " + "{:.4f}".format(ang_deg) + "\n" + "Source translation = " + "{:.4f}".format(srcx_mv) + "\n" + "Detector translation = " + "{:.4f}".format(detx_mv))
+def mv(*args, d=D_SI440): #'pos' in keV, 'd' in Angstrom
+    '''Move a motor stage to the defined absolute position. \n   Syntax: mv(<name1>, <pos1> {,<name2>, <pos2>})'''
+    if len(args) <= 1 or len(args) % 2 != 0:
+        syntax = "Syntax Error: Please provide a motor name and position.\n    mv(<name1>, <pos1> {,<name2>, <pos2>})"
+        raise SyntaxError(syntax)
+
+    if _arg_validity(args[::2]) is True:
+        for _pidevice, pos in np.asarray((args[::2],args[1::2])).T:
+            pos = float(pos)
+            if _pidevice.uname == 'energy':
+                sin_ang = HC/(2*pos*d)
+                if -1 < sin_ang < 1: 
+                    ang_rad = np.arcsin(sin_ang)
+                    ang_deg = ang_rad * 180/np.pi
+                    dist = R_CRYSTAL/np.tan(ang_rad)
+                    srcx_mv = 366 - dist
+                    detx_mv = srcx_mv + 27
+                    print("Source angle = " + "{:.4f}".format(ang_deg) + "\n" 
+                          + "Source translation = " + "{:.4f}".format(srcx_mv) 
+                          + "\n" + "Detector translation = " + "{:.4f}".format(detx_mv))
+                    if 95 < dist < 366:
+                        mv(srcx, srcx_mv, detx, detx_mv, srcr, ang_deg, d=d)
+                        _pidevice.lastpos = pos
+                    else:
+                        print("ERROR: Invalid setup, position not reachable")
+                else:
+                    print("Invalid setup, unobtainable Bragg angle: ", sin_ang)
             else:
-                print("Invalid setup, position not reachable")
+                XEnA_pi_interface.XEnA_move(_pidevice, pos)
+
+def mvr(*args, d=D_SI440):
+    '''Move a motor stage to the defined relative position. \n   Syntax: mvr(<name1>, <pos1> {,<name2>, <pos2>})'''
+    if len(args) <= 1 or len(args) % 2 != 0:
+        syntax = "Syntax Error: Please provide a motor name and position.\n    mvr(<name1>, <pos1> {,<name2>, <pos2>})"
+        raise SyntaxError(syntax)
+
+    if _arg_validity(args[::2]) is True:
+        goto_pos = list('')
+        for _pidevice, step in np.asarray((args[::2],args[1::2])).T:
+            if _pidevice.uname == 'energy' or _pidevice.uname == "dummy":
+                goto_pos.append(_pidevice.lastpos+step)
+            else:
+                current_pos = _pidevice.device.qPOS(_pidevice.device.axes).get("1")
+                goto_pos.append(current_pos+step)
+        mv((args[::2], goto_pos, d=d)
+
+def ascan(*args):
+    '''Perform an absolute scan by moving the specified device from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n   Syntax: ascan(<name>, <start>, <end>, <nsteps>, <time>)'''
+    if len(args) != 5 :
+        syntax = "Syntax Error: Incorrect number of arguments.\n    ascan(<name>, <start>, <end>, <nsteps>, <time>)"
+        raise SyntaxError(syntax)
+    
+    if _arg_validity(_pidevice) is True:
+        _pidevice, _start, _end, _nstep, _time = args
+        _step = (_end-_start)/_nstep
+        mv(_pidevice, _start)
+        for i in range(int(_nstep)+1):
+            # measure
+            data_acq(_time)
+            if i < _nstep:
+                mvr(_pidevice, _step)
+
+def dscan(*args):
+    '''Perform a relative scan by moving the specified device from rel. start pos to rel. end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n   Syntax: dscan(<name>, <rstart>, <rend>, <nsteps>, <time>)'''
+    if len(args) != 5 :
+        syntax = "Syntax Error: Incorrect number of arguments.\n    dscan(<name>, <rstart>, <rend>, <nsteps>, <time>)"
+        raise SyntaxError(syntax)
+
+    if _arg_validity(_pidevice) is True:
+        _pidevice, _rstart, _rend, _nstep, _time = args
+        if _pidevice.device is None:
+            _current_pos = _pidevice.lastpos
         else:
-            print("Invalid setup, unobtainable Bragg angle")
-    else:
-        XEnA_pi_interface.XEnA_move(_pidevice, pos)
+            _current_pos = _pidevice.qPOS(_pidevice.device.axes).get("1")
+        ascan(_pidevice, _current_pos+_rstart, _current_pos+_rend, _nstep, _time)
+        # at end of dscan return to original position
+        mv(_pidevice, _current_pos)
 
-def mvr(_pidevice, step):
-    goto_pos = list('')
-    for i in range(len(_pidevice)):
-        current_pos = _pidevice[i].qPOS(_pidevice[i].axes).get("1")
-        goto_pos.append(current_pos+step[i])
-    mv(_pidevice, goto_pos)
-
-def ascan(_pidevice, start, end, nstep, time):
-    step = (end-start)/nstep
-    mv([_pidevice], [start])
-    for i in range(int(nstep)+1):
-        # measure
-        data_acq(time)
-        if i < nstep:
-            mvr([_pidevice], [step])
-
-def dscan(_pidevice, rstart, rend, nstep, time):
-    current_pos = _pidevice.qPOS(_pidevice.axes).get("1")
-    ascan(_pidevice, current_pos+rstart, current_pos+rend, nstep, time)
-    # at end of dscan return to original position
-    mv([_pidevice], [current_pos])
-
-def mesh(_pidevice1, _pidevice2, start1, end1, nstep1, start2, end2, nstep2, time):
-    step1 = (end1-start1)/nstep1
-    step2 = (end2-start2)/nstep2
-    mv([_pidevice1, _pidevice2], [start1, start2])
-    for i in range(int(nstep1)+1):
-        for j in range(int(nstep2)+1):
+def mesh(*args):
+    '''Perform an absolute 2D scan by moving the specified devices from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n
+    The first device is the slow motor, i.e. this one moves least during the scan.\n
+        Syntax: mesh(<slow1>, <start1>, <end1>, <nsteps1>, <fast2>, <start2>, <end2>, <nsteps2>, <time>)'''
+    if len(args) != 9 :
+        syntax = "Syntax Error: Incorrect number of arguments.\n    Syntax: mesh(<slow1>, <start1>, <end1>, <nsteps1>, <fast2>, <start2>, <end2>, <nsteps2>, <time>)"
+        raise SyntaxError(syntax)
+        
+    _pidevice1, _start1, _end1, _nstep1, _pidevice2, _start2, _end2, _nstep2, _time = args
+    _step1 = (_end1-_start1)/_nstep1
+    _step2 = (_end2-_start2)/_nstep2
+    mv(_pidevice1, _start1, _pidevice2, _start2)
+    for i in range(int(_nstep1)+1):
+        for j in range(int(_nstep2)+1):
             # measure
             print("step: ",i,j)
-            data_acq(time)
-            if j < nstep2:
-                mvr([_pidevice1, _pidevice2], [0, step2])
+            data_acq(_time)
+            if j < _nstep2:
+                mvr(_pidevice1, 0, _pidevice2, _step2)
             else:
-                if i < nstep1:
-                    mv([_pidevice1, _pidevice2], [start1+(i+1)*step1 ,start2])            
+                if i < _nstep1:
+                    mv(_pidevice1, _start1+(i+1)*_step1, _pidevice2, _start2)            
     
-def dmesh(_pidevice1, _pidevice2, rstart1, rend1, nstep1, rstart2, rend2, nstep2, time):
-    current_pos1 = _pidevice1.qPOS(_pidevice1.axes).get("1")
-    current_pos2 = _pidevice2.qPOS(_pidevice2.axes).get("1")
-    mesh(_pidevice1, _pidevice2, current_pos1+rstart1, current_pos1+rend1, nstep1, current_pos2+rstart2, current_pos2+rend2, nstep2, time)
+def dmesh(*args):
+    '''Perform a relative 2D scan by moving the specified devices from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n
+    The first device is the slow motor, i.e. this one moves least during the scan.\n
+        Syntax: dmesh(<slow1>, <rstart1>, <rend1>, <nsteps1>, <fast2>, <rstart2>, <rend2>, <nsteps2>, <time>)'''
+    if len(args) != 9 :
+        syntax = "Syntax Error: Incorrect number of arguments.\n    Syntax: dmesh(<slow1>, <rstart1>, <rend1>, <nsteps1>, <fast2>, <rstart2>, <rend2>, <nsteps2>, <time>)"
+        raise SyntaxError(syntax)
+
+    _pidevice1, _rstart1, _rend1, nstep1, _pidevice2, _rstart2, _rend2, _nstep2, _time = args
+    if _pidevice1.device is None:
+        _current_pos1 = _pidevice1.lastpos
+    else:
+        _current_pos1 = _pidevice1.device.qPOS(_pidevice1.device.axes).get("1")
+    if _pidevice2.device is None:
+        _current_pos2 = _pidevice2.lastpos
+    else:
+        _current_pos2 = _pidevice2.device.qPOS(_pidevice2.device.axes).get("1")
+    mesh(_pidevice1, _pidevice2, current_pos1+rstart1, _current_pos1+_rend1, _nstep1, _current_pos2+_rstart2, _current_pos2+_rend2, _nstep2, _time)
     # at end of dscan return to original position
-    mv([_pidevice1, _pidevice2], [current_pos1, current_pos2])
+    mv(_pidevice1, _current_pos1, _pidevice2, _current_pos2)
     
 def data_acq(time):
-    tm.sleep(time)
+    tm.sleep(time)   
 
-def find_motor_id(_pidevices, uname):
-    for k in range(len(_pidevices)):
-        if _pidevices[k].uname == uname:
-            return k
-    return -1
-        
 
-# def do(_pidevices, commands, verbal=None):
-#     # first disect command in its single parts
-#     #   several commands can be split by semicolon
-#     commands = commands.split(';')
-#     for i in range(len(commands)):
-#         # go over command and dissect it. The main command is the first 'word' in the string
-#         command = commands[i].split(' ')    
-#         # identify, validate and send proper commands
-#         if command[0] == 'wm':
-#             # this command can be followed by any amount of motor names.
-#             if len(command) <= 1:
-#                 syntax = "Syntax Help: Please provide a motor name.\n    wm <name>"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#             else:
-#                 #   verify motor names, and return values
-#                 val_names = list('')
-#                 val_pos = list('')
-#                 for j in range(1,len(command)):
-#                     mot_id = find_motor_id(_pidevices, command[j])
-#                     if mot_id != -1:
-#                         val_names.append(command[j])
-#                         val_pos.append(wm(_pidevices[mot_id].device))
-#                 # return message to terminal
-#                 if verbal:
-#                     verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
-#                     verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
-            
-#         elif command[0] == 'wall':
-#             val_names = list('')
-#             for j in range(len(_pidevices)):
-#                 val_names.append(_pidevices[j].uname)
-#             devs = list('')
-#             for dev in _pidevices:
-#                 devs.append(dev.device)
-#             val_pos = wall(devs)
-#             # return message to terminal
-#             if verbal:
-#                 verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
-#                 verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
-            
-#         elif command[0] == 'wa':
-#             val_names = list('')
-#             for j in range(len(_pidevices)):
-#                 val_names.append(_pidevices[j].uname)
-#             devs = list('')
-#             for dev in _pidevices:
-#                 devs.append(dev.device)
-#             val_pos = wall(devs)
-#             # return message to terminal
-#             if verbal:
-#                 verbal.add_output("\n    "+"".join(name.center(20) for name in val_names))
-#                 verbal.add_output("    "+"".join(str("%.4f" % pos).center(15) for pos in val_pos)+'\n')
-            
-#         elif command[0] == 'mv':
-#             # mv is followed by motor name and float
-#             if len(command) <= 2:
-#                 syntax = "Syntax Help: Please provide a motor name and position.\n    mv <name> <position>"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#             #   i.e. mv samx 0 samy 0
-#             else:
-#                 devs = list('')
-#                 pos = list('')
-#                 for j in range(1,len(command),2):
-#                     mot_id = find_motor_id(_pidevices, command[j])
-#                     if mot_id != -1:
-#                         devs.append(_pidevices[mot_id].device)
-#                         pos.append(float(command[j+1]))
-#                 mv(devs, pos)
-            
-#         elif command[0] == 'mvr':
-#             # mvr is followed by motor name and float
-#             if len(command) <= 2:
-#                 syntax = "Syntax Help: Please provide a motor name and relative distance.\n    mvr <name> <dist>"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#                 #   i.e. mvr samx 10 samy -10
-#             else:
-#                 devs = list('')
-#                 steps = list('')
-#                 for j in range(1,len(command),2):
-#                     mot_id = find_motor_id(_pidevices, command[j])
-#                     if mot_id != -1:
-#                         devs.append(_pidevices[mot_id].device)
-#                         steps.append(float(command[j+1]))
-#                 mvr(devs, steps)
-
-#         elif command[0] == 'ascan':
-#             # ascan is followed by motor name, start, end, nstep, time
-#             #   i.e. ascan samx 0 10 5 1
-#             if len(command) != 6:
-#                 syntax = "Syntax Help: Please provide a motor name, start position, end position, amount of steps and acquisition time.\n    ascan <name> <start> <stop> <# steps> <time>"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#             else:
-#                 mot_id = find_motor_id(_pidevices, command[1])
-#                 if mot_id != -1:
-#                     ascan(_pidevices[mot_id].device, float(command[2]), float(command[3]), float(command[4]), float(command[5]))
-            
-#         elif command[0] == 'dscan':
-#             # dscan is followed by motor name, rstart, rend, nstep, time
-#             #   i.e. dscan samx -10 10 5 1
-#             if len(command) != 6:
-#                 syntax = "Syntax Help: Please provide a motor name, relative start position, relative end position, amount of steps and acquisition time.\n    dscan <name> <rel. start> <rel. stop> <# steps> <time>"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#             else:
-#                 mot_id = find_motor_id(_pidevices, command[1])
-#                 if mot_id != -1:
-#                     dscan(_pidevices[mot_id].device, float(command[2]), float(command[3]), float(command[4]), float(command[5]))
-
-#         elif command[0] == 'mesh':
-#             # mesh is followed by motor name, start, end, nstep, motor name2, start2, end2, nstep2, time
-#             #   i.e. mesh samx 0 10 5 samz 0 10 5 1
-#             if len(command) != 10:
-#                 syntax = "Syntax Help:\n    mesh <name1> <start1> <stop1> <# steps1> <name2> <start2> <stop2> <# steps2> <time>\n      <name1> is outer loop, <name2> is inner loop (moves most)"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#             else:
-#                 mot_id1 = find_motor_id(_pidevices, command[1])
-#                 mot_id2 = find_motor_id(_pidevices, command[5])
-#                 if mot_id1 != -1 and mot_id2 != -1 and mot_id1 != mot_id2:
-#                     mesh(_pidevices[mot_id1].device, _pidevices[mot_id2].device, float(command[2]), float(command[3]), float(command[4]), float(command[6]), float(command[7]), float(command[8]), float(command[9]))
-                    
-#         elif command[0] == 'dmesh':
-#             # dmesh is followed by motor name, rstart, rend, nstep, motor name2, rstart2, rend2, nstep2, time
-#             #   i.e. dmesh samx -10 10 5 samz 0 10 5 1
-#             if len(command) != 10:
-#                 syntax = "Syntax Help:\n    dmesh <name1> <rel.start1> <rel.stop1> <# steps1> <name2> <rel.start2> <rel.stop2> <# steps2> <time>\n      <name1> is outer loop, <name2> is inner loop (moves most)"
-#                 print(syntax)
-#                 if verbal:
-#                     verbal.add_output(syntax)
-#             else:
-#                 mot_id1 = find_motor_id(_pidevices, command[1])
-#                 mot_id2 = find_motor_id(_pidevices, command[5])
-#                 if mot_id1 != -1 and mot_id2 != -1 and mot_id1 != mot_id2:
-#                     dmesh(_pidevices[mot_id1].device, _pidevices[mot_id2].device, float(command[2]), float(command[3]), float(command[4]), float(command[6]), float(command[7]), float(command[8]), float(command[9]))
-
-#         elif command[0] == '':
-#             if verbal:
-#                 verbal.add_output(command[0])
-
-#         else:
-#             syntax = "ERROR: Unknown Command: "+ command[0]
-#             print(syntax)
-#             if verbal:
-#                 verbal.add_output(syntax)
-    
-#         # somehow couple back info to terminal screen (e.g. would be nice to see umv update during move...)
-#           print(f"{count}", end="\r", flush=True)
 
 if __name__ == "__main__":
         # initiate PI devices and generate local variables for each device uname
@@ -280,7 +195,6 @@ if __name__ == "__main__":
     myVars = locals()
     for dev in devices:
         myVars[dev.uname] = dev.device
-    energy = 'energy' #define a virtual device called energy
 
     atexit.register(XEnA_pi_interface.XEnA_close, devices) #on exit of program should close all connections
     #TODO: signal.signal(signal.SIGINT, handle_ctrlc) #stop motors
