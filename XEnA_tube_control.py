@@ -246,6 +246,11 @@ class XEnA_tube_gui(QWidget):
         output += text+'\n'
         self.message_win.setText(output)
 
+def run():
+    app = QApplication(sys.argv)
+    xena_tube = XEnA_tube_gui()
+    xena_tube.show()
+    sys.exit(app.exec_())    
     
 if __name__ == "__main__":
     app = QApplication(sys.argv)
