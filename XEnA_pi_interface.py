@@ -41,7 +41,7 @@ class Pidevice():
                 self.usb = None
                 self.stage = None
                 self.controller = None
-                self.lastpos = stagedict['lastpos']
+                self.lastpos = float(stagedict['lastpos'])
                 self.velocity = None
             else:
                 print("Connecting "+stagedict['uname']+"...")
@@ -63,8 +63,8 @@ class Pidevice():
                     self.usb = stagedict['usb']
                     self.stage = stagedict['stage']
                     self.controller = stagedict['controller']
-                    self.lastpos = stagedict['lastpos']
-                    self.velocity = stagedict['velocity']        
+                    self.lastpos = float(stagedict['lastpos'])
+                    self.velocity = float(stagedict['velocity'])       
                 except Exception as exc:
                     print("Error:", exc)
                     self.device = None
@@ -72,8 +72,8 @@ class Pidevice():
                     self.usb = stagedict['usb']
                     self.stage = stagedict['stage']
                     self.controller = stagedict['controller']
-                    self.lastpos = stagedict['controller']
-                    self.velocity = stagedict['velocity']        
+                    self.lastpos = float(stagedict['lastpos'])
+                    self.velocity = float(stagedict['velocity'])      
                     
 
 
@@ -85,11 +85,12 @@ def XEnA_pi_init():
         pidevices.append(Pidevice(stage))
 
     # home motors
-    for i in range(len(pidevices)):
-        # pidevices[i].device.FRF(pidevices[i].device.axes)  # find reference switch
-        while True:
-            if (pidevices[i].device.IsControllerReady()):
-                break
+    for _pidevice in pidevices:
+        if _pidevice.device is not None:
+            # _pidevice.device.FRF(_pidevice.device.axes)  # find reference switch
+            while True:
+                if (_pidevice.device.IsControllerReady()):
+                    break
     return pidevices
 
 
@@ -119,9 +120,14 @@ def XEnA_read_dict(dictfile):
     return stagedict
 
 def XEnA_move(pidevice, target):
-    if type(pidevice) != __main__.Pidevice:
+    if type(pidevice) != type(Pidevice('dummy')):
         syntax = "Type Error: Unknown device type <"+type(pidevice)+">"
         raise TypeError(syntax)
+        
+    if pidevice.device is None:
+        syntax = "Key Error: device not appropriately initialised: "+pidevice.uname
+        raise KeyError(syntax)
+        
 
     if pidevice.uname == 'dummy':
         pidevice.lastpos = target
@@ -203,14 +209,14 @@ def XEnA_move(pidevice, target):
 #       'stage' : None,
 #       'usb': None,
 #       'lastpos' : 0,
-#       'velocity' : None,
+#       'velocity' : 0,
 #       'uname': "dummy"},
 
 #     {'controller': None,
 #       'stage' : None,
 #       'usb': None,
 #       'lastpos' : 0,
-#       'velocity' : None,
+#       'velocity' : 0,
 #       'uname': "energy"}
 #     ]
 
