@@ -82,6 +82,9 @@ class XEnA_tube_gui(QWidget):
         self.field_kVset.setMaximumWidth(60)
         self.field_kVset.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_voltage.addWidget(self.field_kVset)
+        self.maxvolt = QPushButton("MAX")
+        self.maxvolt.setMinimumWidth(50)
+        layout_voltage.addWidget(self.maxvolt)
         layout_voltage.addStretch()
         layout_main.addLayout(layout_voltage)
 
@@ -98,6 +101,9 @@ class XEnA_tube_gui(QWidget):
         self.field_mAset.setMaximumWidth(60)
         self.field_mAset.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_current.addWidget(self.field_mAset)
+        self.minvolt = QPushButton("OFF")
+        self.minvolt.setMinimumWidth(50)
+        layout_current.addWidget(self.maxvolt)
         layout_current.addStretch()
         layout_main.addLayout(layout_current)
         
@@ -152,19 +158,20 @@ class XEnA_tube_gui(QWidget):
             return
 
             
-        while self.monitor == True:
-            for i in range(10): #display an averaged value of 10 measurements within approx 1s.
-                with nidaqmx.Task() as task:
-                    task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
-                    value = task.read()
-                    voltage[i] = value/10.*50.
-                with nidaqmx.Task() as task:
-                    task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
-                    value = task.read()
-                    current[i] = value/10.*2.
-                time.sleep(0.1)
-            self.field_mAmon.setText("{:.3f}".format(np.average(current)))
-            self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
+        while self.thread():
+            if self.monitor == True:
+                for i in range(10): #display an averaged value of 10 measurements within approx 1s.
+                    with nidaqmx.Task() as task:
+                        task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
+                        value = task.read()
+                        voltage[i] = value/10.*50.
+                    with nidaqmx.Task() as task:
+                        task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
+                        value = task.read()
+                        current[i] = value/10.*2.
+                    time.sleep(0.1)
+                self.field_mAmon.setText("{:.3f}".format(np.average(current)))
+                self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
 
     def toggle_interlock(self):
         if self.interlock_state is False: # if interlock off, set voltage to 0. If on set voltage to 5
@@ -227,7 +234,7 @@ class XEnA_tube_gui(QWidget):
 
     def ramp_voltage(self, setpoint, address_set, address_mon):
         try:
-            self.thread.stop()
+            self.monitor = False #temporarily make the monitor stop monitoring to avoid nidaq errors
 
             with nidaqmx.Task() as task:
                 task.ai_channels.add_ai_voltage_chan(address_mon)
@@ -239,8 +246,6 @@ class XEnA_tube_gui(QWidget):
                 incr = 0.2
             n_incr = int(np.floor((setpoint - current_volt)/incr))
             set_voltage = (np.arange(n_incr)+1)*incr + current_volt
-            if set_voltage is not []:
-                self.add_message("Ramping...")
             
             for i in range(n_incr):
                 with nidaqmx.Task() as task:
@@ -251,11 +256,14 @@ class XEnA_tube_gui(QWidget):
                     task.ai_channels.add_ai_voltage_chan(address_mon)
                     current_volt = task.read()
                     task.wait_until_done()
-                self.add_message("\tRamping to %lf V" % current_volt)
-                self.update()
+                
+                if address_mon == kVmon_ID:
+                    self.add_message("\tRamped to %0.2f kV" % current_volt/50.*10.)
+                elif address_mon == mAmon_ID:
+                    self.add_message("\tRamped to %0.2f mA" % current_volt/2.*10.)
                 time.sleep(1)
                 
-            self.thread.start()
+            self.monitor = True # restart monitor
 
                 #TODO: give feedback in GUI on progress
                
@@ -275,6 +283,7 @@ class XEnA_tube_gui(QWidget):
         output = self.message_win.text()
         output += text+'\n'
         self.message_win.setText(output)
+        self.message_win.repaint() #alternatively, we may have to QCoreApplication::processEvents()
 
 def run():
     app = QApplication(sys.argv)
