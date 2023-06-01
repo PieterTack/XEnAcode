@@ -41,6 +41,10 @@ class XEnA_tube_gui(QWidget):
     def __init__(self, parent=None):
         super(XEnA_tube_gui, self).__init__(parent)
     
+        font = self.font()
+        font.setPointSize(13)
+        QApplication.instance().setFont(font)
+
         # create main layout for widgets
         layout_main = QVBoxLayout()
         layout_interlock = QHBoxLayout()
@@ -50,26 +54,32 @@ class XEnA_tube_gui(QWidget):
 
         self.label_main = QLabel("XEnA Source Control")
         layout_main.addWidget(self.label_main)
+        #TODO: preset buttons (40kV and shutdown)
         
-        # self.switch_interlock = QCheckBox("Interlock (on=photons, off=no photons)")
+        with nidaqmx.Task() as task:
+            task.do_channels.add_do_chan(interlock_ID)
+            self.interlock_state = task.read()
         self.switch_interlock = QPushButton()
-        self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
+        if self.interlock_state is False:
+            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
+        else:
+            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
         self.switch_interlock.setIconSize(QSize(300, 150))
-        self.interlock_state = False #TODO: we actually want to poll the nidaq for the current state...
         layout_interlock.addWidget(self.switch_interlock)
         layout_main.addLayout(layout_interlock)
         
         self.label_kVmon = QLabel("Voltage [kV]:  monitor: ")
+        self.label_kVmon.setFont(font)
         layout_voltage.addWidget(self.label_kVmon)
         self.field_kVmon = QLineEdit("-----")
-        self.field_kVmon.setMaximumWidth(40)
+        self.field_kVmon.setMaximumWidth(60)
         self.field_kVmon.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_voltage.addWidget(self.field_kVmon)
         self.field_kVmon.setEnabled(False)
         self.label_kVset = QLabel(" set: ")
         layout_voltage.addWidget(self.label_kVset)
         self.field_kVset = QLineEdit("-----")
-        self.field_kVset.setMaximumWidth(40)
+        self.field_kVset.setMaximumWidth(60)
         self.field_kVset.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_voltage.addWidget(self.field_kVset)
         layout_voltage.addStretch()
@@ -78,20 +88,23 @@ class XEnA_tube_gui(QWidget):
         self.label_mAmon = QLabel("Current [mA]: monitor: ")
         layout_current.addWidget(self.label_mAmon)
         self.field_mAmon = QLineEdit("-----")
-        self.field_mAmon.setMaximumWidth(40)
+        self.field_mAmon.setMaximumWidth(60)
         self.field_mAmon.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_current.addWidget(self.field_mAmon)
         self.field_mAmon.setEnabled(False)
         self.label_mAset = QLabel(" set: ")
         layout_current.addWidget(self.label_mAset)
         self.field_mAset = QLineEdit("-----")
-        self.field_mAset.setMaximumWidth(40)
+        self.field_mAset.setMaximumWidth(60)
         self.field_mAset.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_current.addWidget(self.field_mAset)
         layout_current.addStretch()
         layout_main.addLayout(layout_current)
         
         self.message_win = QLabel('Connecting...\n')
+        font2 = self.font()
+        font2.setPointSize(10)
+        self.message_win.setFont(font2)
         self.message_win.setStyleSheet("QLabel { background-color : white; color : blackd; }");
         self.message_win.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.message_win.setCursor(Qt.IBeamCursor)
@@ -143,10 +156,12 @@ class XEnA_tube_gui(QWidget):
             for i in range(10): #display an averaged value of 10 measurements within approx 1s.
                 with nidaqmx.Task() as task:
                     task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
-                    voltage[i] = task.read()/10.*50.
+                    value = task.read()
+                    voltage[i] = value/10.*50.
                 with nidaqmx.Task() as task:
                     task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
-                    current[i] = task.read()/10.*2.
+                    value = task.read()
+                    current[i] = value/10.*2.
                 time.sleep(0.1)
             self.field_mAmon.setText("{:.3f}".format(np.average(current)))
             self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
@@ -204,7 +219,7 @@ class XEnA_tube_gui(QWidget):
             self.field_mAset.setText("{:.3f}".format(2.))
         
         if self.ramp_voltage(current, mAset_ID, mAmon_ID) == True:
-            self.add_message("Tube current set to "+self.field_mAset.text()+"mA")
+            self.add_message("Tube current set to %s mA" % self.field_mAset.text())
             return True
         else:
             self.add_message("**ERROR: could not set tube current to "+self.field_mAset.text()+"mA")
@@ -212,6 +227,8 @@ class XEnA_tube_gui(QWidget):
 
     def ramp_voltage(self, setpoint, address_set, address_mon):
         try:
+            self.thread.stop()
+
             with nidaqmx.Task() as task:
                 task.ai_channels.add_ai_voltage_chan(address_mon)
                 current_volt = task.read()
@@ -220,14 +237,27 @@ class XEnA_tube_gui(QWidget):
                 incr = -0.2
             else:
                 incr = 0.2
-            n_incr = int(np.floor((current_volt - setpoint)/incr))
+            n_incr = int(np.floor((setpoint - current_volt)/incr))
             set_voltage = (np.arange(n_incr)+1)*incr + current_volt
+            if set_voltage is not []:
+                self.add_message("Ramping...")
             
             for i in range(n_incr):
                 with nidaqmx.Task() as task:
                     task.ao_channels.add_ao_voltage_chan(address_set)
                     task.write(set_voltage[i], auto_start=True)
-                time.sleep(2)
+                    task.wait_until_done()
+                with nidaqmx.Task() as task:
+                    task.ai_channels.add_ai_voltage_chan(address_mon)
+                    current_volt = task.read()
+                    task.wait_until_done()
+                self.add_message("\tRamping to %lf V" % current_volt)
+                self.update()
+                time.sleep(1)
+                
+            self.thread.start()
+
+                #TODO: give feedback in GUI on progress
                
             with nidaqmx.Task() as task:
                 task.ao_channels.add_ao_voltage_chan(address_set)
