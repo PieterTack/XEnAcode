@@ -19,7 +19,7 @@ Created on Mon May 31 08:49:47 2021
 #       nidaqmx.constants.DigitalDriveType.ACTIVE_DRIVE (= 12573)
 
 import sys
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QCoreApplication
 from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
     QLabel, QLineEdit, QScrollArea, QPushButton
@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
 
 import time
 import nidaqmx  # pip install nidaqmx, https://itom.bitbucket.io/plugindoc/plugins/ad-converters/niDAQmx.html
+from nidaqmx.constants import TerminalConfiguration
 import threading
 import numpy as np
 
@@ -103,11 +104,11 @@ class XEnA_tube_gui(QWidget):
         layout_current.addWidget(self.field_mAset)
         self.minvolt = QPushButton("OFF")
         self.minvolt.setMinimumWidth(50)
-        layout_current.addWidget(self.maxvolt)
+        layout_current.addWidget(self.minvolt)
         layout_current.addStretch()
         layout_main.addLayout(layout_current)
         
-        self.message_win = QLabel('Connecting...\n')
+        self.message_win = QLabel('Connecting...')
         font2 = self.font()
         font2.setPointSize(10)
         self.message_win.setFont(font2)
@@ -140,16 +141,20 @@ class XEnA_tube_gui(QWidget):
         self.thread.start()
 
     def tube_monitor(self):
+        self.stop = threading.Event()
+        
         voltage = np.zeros(10)
         current = np.zeros(10)
         time.sleep(7) #have to sleep a while here to give rest of GUI time to spawn
         try:
             with nidaqmx.Task() as task:
-                task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
+                task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE) #kV monitor
                 task.read()
+                task.wait_until_done()
             with nidaqmx.Task() as task:
-                task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
+                task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE) #mA monitor
                 task.read()
+                task.wait_until_done()
         except Exception as ex:
             self.add_message("----------------")
             self.add_message(str(ex))
@@ -157,21 +162,29 @@ class XEnA_tube_gui(QWidget):
             self.add_message("**ERROR: Could not connect to NI-DAQmx monitor input channels.")
             return
 
-            
-        while self.thread():
+        output = self.message_win.text()
+        output += ' Connected.\n'
+        self.message_win.setText(output)
+
+        while (not self.stop.wait(1)):
             if self.monitor == True:
-                for i in range(10): #display an averaged value of 10 measurements within approx 1s.
-                    with nidaqmx.Task() as task:
-                        task.ai_channels.add_ai_voltage_chan(kVmon_ID) #kV monitor
-                        value = task.read()
+                try:
+                    for i in range(10): #display an averaged value of 10 measurements within approx 1s.
+                        with nidaqmx.Task() as task:
+                            task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE) #kV monitor
+                            value = task.read()
+                            task.wait_until_done()
                         voltage[i] = value/10.*50.
-                    with nidaqmx.Task() as task:
-                        task.ai_channels.add_ai_voltage_chan(mAmon_ID) #mA monitor
-                        value = task.read()
+                        with nidaqmx.Task() as task:
+                            task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE) #mA monitor
+                            value = task.read()
+                            task.wait_until_done()
                         current[i] = value/10.*2.
-                    time.sleep(0.1)
-                self.field_mAmon.setText("{:.3f}".format(np.average(current)))
-                self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
+                        time.sleep(0.1)
+                    self.field_mAmon.setText("{:.3f}".format(np.average(current)))
+                    self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
+                except Exception:
+                    pass
 
     def toggle_interlock(self):
         if self.interlock_state is False: # if interlock off, set voltage to 0. If on set voltage to 5
@@ -189,11 +202,13 @@ class XEnA_tube_gui(QWidget):
             with nidaqmx.Task() as task:
                 task.do_channels.add_do_chan(interlock_ID)
                 task.write(self.interlock_state, auto_start=True)
+                task.wait_until_done()
         except Exception as ex:
             self.add_message("----------------")
             self.add_message(str(ex))
             self.add_message("========")
             self.add_message("**ERROR: Could not connect to digital output channel Dev1/port2/line0")
+            self.monitor = True
             return
     
     def set_voltage(self):
@@ -237,8 +252,9 @@ class XEnA_tube_gui(QWidget):
             self.monitor = False #temporarily make the monitor stop monitoring to avoid nidaq errors
 
             with nidaqmx.Task() as task:
-                task.ai_channels.add_ai_voltage_chan(address_mon)
+                task.ai_channels.add_ai_voltage_chan(address_mon, terminal_config = TerminalConfiguration.RSE)
                 current_volt = task.read()
+                task.wait_until_done()
             
             if setpoint <= current_volt:
                 incr = -0.2
@@ -253,23 +269,25 @@ class XEnA_tube_gui(QWidget):
                     task.write(set_voltage[i], auto_start=True)
                     task.wait_until_done()
                 with nidaqmx.Task() as task:
-                    task.ai_channels.add_ai_voltage_chan(address_mon)
+                    task.ai_channels.add_ai_voltage_chan(address_mon, terminal_config = TerminalConfiguration.RSE)
                     current_volt = task.read()
                     task.wait_until_done()
                 
                 if address_mon == kVmon_ID:
-                    self.add_message("\tRamped to %0.2f kV" % current_volt/50.*10.)
+                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*50.) +" kV")
+                    self.field_kVmon.setText("{:.3f}".format(current_volt/10.*50.))
                 elif address_mon == mAmon_ID:
-                    self.add_message("\tRamped to %0.2f mA" % current_volt/2.*10.)
-                time.sleep(1)
-                
-            self.monitor = True # restart monitor
-
+                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*2.) +" mA")
+                    self.field_mAmon.setText("{:.3f}".format(current_volt/10.*2.))
+                time.sleep(5)
                 #TODO: give feedback in GUI on progress
                
             with nidaqmx.Task() as task:
                 task.ao_channels.add_ao_voltage_chan(address_set)
                 task.write(setpoint, auto_start=True)
+                task.wait_until_done()
+
+            self.monitor = True # restart monitor
             
             return True
         
@@ -277,13 +295,19 @@ class XEnA_tube_gui(QWidget):
             self.add_message("----------------")
             self.add_message(str(ex))
             self.add_message("========")
+            self.monitor = True
             return False
 
     def add_message(self, text):
         output = self.message_win.text()
         output += text+'\n'
         self.message_win.setText(output)
-        self.message_win.repaint() #alternatively, we may have to QCoreApplication::processEvents()
+        QCoreApplication.processEvents() #update the gui... it's slow, but the only thing that appears to works...
+        
+    def closeEvent(self, event):
+        self.stop.set() #terminates tube_monitor
+        self.thread.join()
+        event.accept()
 
 def run():
     app = QApplication(sys.argv)
