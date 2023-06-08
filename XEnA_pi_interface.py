@@ -26,32 +26,56 @@ class Pidevice():
         # _pidevice.ConnectUSB(serialnum='123456789')
         # _pidevice.ConnectTCPIP(ipaddress='192.168.178.42')
 
-
-        print("Connecting "+stagedict['uname']+"...")
-        print("    Serial: ",stagedict['usb'], "controller: ", stagedict['controller'], "stage: ", stagedict['stage'])
-        self.device = GCSDevice(stagedict['controller'])
-        if stagedict['uname'] == 'dummy':
-            None
+        if type(stagedict) is str:
+                self.device = None
+                self.uname = stagedict
+                self.usb = None
+                self.stage = None
+                self.controller = None
+                self.lastpos = 0
+                self.velocity = None
         else:
-            self.device.ConnectUSB(serialnum=stagedict['usb'])
-        # self.device.CLR() #reset motor
-        print("    Switching on servo...")
-        self.device.SVO(self.device.axes, values=True) # switches on servo
-        # print("    Switching on velocity control...")
-        # print(self.device.qVCO(axes=self.device.axes))
-        # self.device.VCO(self.device.axes, values=True) # switches on velocity control
-        print("    Setting velocity to ", stagedict['velocity'])
-        self.device.VEL(self.device.axes, values=stagedict['velocity'])
-        
-        
-        print('connected: {}'.format(self.device.qIDN().strip()))
-        
-        self.uname = stagedict['uname']
-        self.usb = stagedict['usb']
-        self.stage = stagedict['stage']
-        self.controller = stagedict['controller']
-        self.lastpos = stagedict['lastpos']
-        self.velocity = stagedict['velocity']
+            if stagedict['uname'] == 'dummy' or stagedict['uname'] == 'energy':
+                self.device = None
+                self.uname = stagedict['uname']
+                self.usb = None
+                self.stage = None
+                self.controller = None
+                self.lastpos = float(stagedict['lastpos'])
+                self.velocity = None
+            else:
+                print("Connecting "+stagedict['uname']+"...")
+                print("    Serial: ",stagedict['usb'], "controller: ", stagedict['controller'], "stage: ", stagedict['stage'])
+                try:
+                    self.device = GCSDevice(stagedict['controller'])
+                    self.device.ConnectUSB(serialnum=stagedict['usb'])
+                    # self.device.CLR() #reset motor
+                    print("    Switching on servo...")
+                    self.device.SVO(self.device.axes, values=True) # switches on servo
+                    # print("    Switching on velocity control...")
+                    # print(self.device.qVCO(axes=self.device.axes))
+                    # self.device.VCO(self.device.axes, values=True) # switches on velocity control
+                    print("    Setting velocity to ", stagedict['velocity'])
+                    self.device.VEL(self.device.axes, values=stagedict['velocity'])
+                    print('connected: {}'.format(self.device.qIDN().strip()))
+                
+                    self.uname = stagedict['uname']
+                    self.usb = stagedict['usb']
+                    self.stage = stagedict['stage']
+                    self.controller = stagedict['controller']
+                    self.lastpos = float(stagedict['lastpos'])
+                    self.velocity = float(stagedict['velocity'])       
+                except Exception as exc:
+                    print("Error:", exc)
+                    self.device = None
+                    self.uname = stagedict['uname']
+                    self.usb = stagedict['usb']
+                    self.stage = stagedict['stage']
+                    self.controller = stagedict['controller']
+                    self.lastpos = float(stagedict['lastpos'])
+                    self.velocity = float(stagedict['velocity'])      
+                    
+
 
 def XEnA_pi_init():
     pidevices = list('')
@@ -61,11 +85,12 @@ def XEnA_pi_init():
         pidevices.append(Pidevice(stage))
 
     # home motors
-    for i in range(len(pidevices)):
-        # pidevices[i].device.FRF(pidevices[i].device.axes)  # find reference switch
-        while True:
-            if (pidevices[i].device.IsControllerReady()):
-                break
+    for _pidevice in pidevices:
+        if _pidevice.device is not None:
+            # _pidevice.device.FRF(_pidevice.device.axes)  # find reference switch
+            while True:
+                if (_pidevice.device.IsControllerReady()):
+                    break
     return pidevices
 
 
@@ -94,10 +119,23 @@ def XEnA_read_dict(dictfile):
        stagedict = json.loads(data_file.read())
     return stagedict
 
-def XEnA_move(_pidevice, target):
-    # move motors
-    _pidevice.MOV(_pidevice.axes, target)
-    pitools.waitontarget(_pidevice, axes=_pidevice.axes)
+def XEnA_move(pidevice, target):
+    if type(pidevice) != type(Pidevice('dummy')):
+        syntax = "Type Error: Unknown device type <"+type(pidevice)+">"
+        raise TypeError(syntax)
+        
+    if pidevice.device is None:
+        syntax = "Key Error: device not appropriately initialised: "+pidevice.uname
+        raise KeyError(syntax)
+        
+
+    if pidevice.uname == 'dummy':
+        pidevice.lastpos = target
+    else:
+        # move motors
+        pidevice.device.MOV(pidevice.device.axes, target)
+        pitools.waitontarget(pidevice.device, axes=pidevice.device.axes)
+        pidevice.lastpos = target
 
     # for i in range(len(_pidevice)):
     #     while True:
@@ -165,6 +203,20 @@ def XEnA_move(_pidevice, target):
 #       'usb': "0021550047",
 #       'lastpos' : 0,
 #       'velocity' : 1.5,
-#       'uname': "cryt"}
+#       'uname': "cryt"},
+
+#     {'controller': None,
+#       'stage' : None,
+#       'usb': None,
+#       'lastpos' : 0,
+#       'velocity' : 0,
+#       'uname': "dummy"},
+
+#     {'controller': None,
+#       'stage' : None,
+#       'usb': None,
+#       'lastpos' : 0,
+#       'velocity' : 0,
+#       'uname': "energy"}
 #     ]
 
