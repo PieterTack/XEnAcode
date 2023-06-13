@@ -12,7 +12,7 @@ import atexit
 import XEnA_pi_interface
 import XEnA_tube_control
 import threading
-# import signal
+import signal
 
 
 R_CRYSTAL = 500. # mm
@@ -237,18 +237,22 @@ def crystal():
 def _data_acq(time):
     tm.sleep(time)
 
+def _handle_ctrlc():
+    print("ctrl+c event registered")
 
 
 if __name__ == "__main__":
+    #start tube control window spawn
+    tubethread = threading.Thread(target=XEnA_tube_control.run)
+    tubethread.start()
+
         # initiate PI devices and generate local variables for each device uname
     _devices = XEnA_pi_interface.XEnA_pi_init()
     _myVars = locals()
     for dev in _devices:
         _myVars[dev.uname] = dev
 
-    tubethread = threading.Thread(target=XEnA_tube_control.run)
-    tubethread.start()
 
     atexit.register(XEnA_pi_interface.XEnA_close, _devices) #on exit of program should close all connections
-    #TODO: signal.signal(signal.SIGINT, handle_ctrlc) #stop motors
+    signal.signal(signal.SIGINT, _handle_ctrlc) #stop motors
     
