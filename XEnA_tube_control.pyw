@@ -102,7 +102,7 @@ class XEnA_tube_gui(QWidget):
         self.field_mAset.setMaximumWidth(60)
         self.field_mAset.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_current.addWidget(self.field_mAset)
-        self.minvolt = QPushButton("LOW")
+        self.minvolt = QPushButton("MIN")
         self.minvolt.setMinimumWidth(50)
         layout_current.addWidget(self.minvolt)
         layout_current.addStretch()
@@ -214,9 +214,9 @@ class XEnA_tube_gui(QWidget):
 
 
     def set_min_voltage(self):
-        # set source setting to minimal settings: 1kV, 0.1 mA
+        # set source setting to minimal settings: 10kV, 0.1 mA
         self.ramp_voltage(0.1, mAset_ID, mAmon_ID)
-        self.ramp_voltage(1, kVset_ID, kVmon_ID)
+        self.ramp_voltage(10, kVset_ID, kVmon_ID)
     
     def set_max_voltage(self):
         # set source setting to minimal settings: 40kV, 2 mA
