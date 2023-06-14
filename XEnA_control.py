@@ -37,7 +37,6 @@ def _arg_validity(*args):
         if devicename not in myVars:
             syntax = "Syntax Error: Unknown device <"+devicename+">"
             raise SyntaxError(syntax)
-    return True
     
 
 # depending on cmd_base, call different functions to execute
@@ -57,7 +56,6 @@ def wm(*args):
     for i in range(0, len(args), 5):
         print("    "+"".join(n.uname.center(20) for n in args[i:i+5]))
         print("    "+"".join(str("%.4f" % pos).center(20) for pos in positions[i:i+5])+'\n')
-    return True
 
 def wall():
     '''Retreive the current position of all devices.\n    Syntax: wall()'''
@@ -71,7 +69,6 @@ def wall():
     for i in range(0, len(positions), 5):
         print("    "+"".join(n.uname.center(20) for n in _devices[i:i+5]))
         print("    "+"".join(str("%.4f" % pos).center(20) for pos in positions[i:i+5])+'\n')
-    return True
 
 def wa():
     '''Retreive the current position of all devices.\n    Syntax: wa()'''

@@ -193,11 +193,11 @@ class XEnA_tube_gui(QWidget):
             self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
         else:
             self.interlock_state = False
-            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
             self.field_kVset.setText("{:.3f}".format(0.))
             self.field_mAset.setText("{:.3f}".format(0.))
             self.ramp_voltage(0., kVset_ID, kVmon_ID)
             self.ramp_voltage(0., mAset_ID, mAmon_ID)
+            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
 
         try:            
             with nidaqmx.Task() as task:
@@ -215,19 +215,23 @@ class XEnA_tube_gui(QWidget):
 
     def set_min_voltage(self):
         # set source setting to minimal settings: 10kV, 0.1 mA
-        self.ramp_voltage(0.1, mAset_ID, mAmon_ID)
-        self.ramp_voltage(10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
+        self.add_message("Tube voltage set to 10kV")
+        self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
+        self.add_message("Tube voltage set to 0.1mA")
     
     def set_max_voltage(self):
         # set source setting to minimal settings: 40kV, 2 mA
-        self.ramp_voltage(10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(0.5, mAset_ID, mAmon_ID)
-        self.ramp_voltage(20, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1., mAset_ID, mAmon_ID)
-        self.ramp_voltage(30, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1.5, mAset_ID, mAmon_ID)
-        self.ramp_voltage(40, kVset_ID, kVmon_ID)
-        self.ramp_voltage(2., mAset_ID, mAmon_ID)
+        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(0.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(20./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(1./2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(30./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(1.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(40./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(2./2*10, mAset_ID, mAmon_ID)
+        self.add_message("Tube voltage set to 40kV")
+        self.add_message("Tube voltage set to 2.0mA")
 
     
     def set_voltage(self):
