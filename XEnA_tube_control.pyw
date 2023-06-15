@@ -241,9 +241,11 @@ class XEnA_tube_gui(QWidget):
         if voltage < 0.:
             voltage = 0.
             self.field_kVset.setText("{:.3f}".format(0.))
+            self.add_message("WARNING: tube voltage cannot be negative.")
         if voltage > 8:  #voltage limited to 40kV
             voltage = 8.
-            self.field_kVset.setText("{:.3f}".format(50.))
+            self.field_kVset.setText("{:.3f}".format(40.))
+            self.add_message("WARNING: tube voltage cannot exceed 40kV.")
 
         if self.ramp_voltage(voltage, kVset_ID, kVmon_ID) == True:
             self.add_message("Tube voltage set to "+self.field_kVset.text()+"kV")
@@ -259,9 +261,11 @@ class XEnA_tube_gui(QWidget):
         if current < 0.:
             current = 0.
             self.field_mAset.setText("{:.3f}".format(0.))
+            self.add_message("WARNING: tube current cannot be negative.")
         if current > 10:
             current = 10.
             self.field_mAset.setText("{:.3f}".format(2.))
+            self.add_message("WARNING: tube voltage cannot exceed 2mA.")
         
         if self.ramp_voltage(current, mAset_ID, mAmon_ID) == True:
             self.add_message("Tube current set to %s mA" % self.field_mAset.text())
