@@ -102,7 +102,7 @@ class XEnA_tube_gui(QWidget):
         self.field_mAset.setMaximumWidth(60)
         self.field_mAset.setValidator(QDoubleValidator(-1E6, 1E6,3))
         layout_current.addWidget(self.field_mAset)
-        self.minvolt = QPushButton("LOW")
+        self.minvolt = QPushButton("MIN")
         self.minvolt.setMinimumWidth(50)
         layout_current.addWidget(self.minvolt)
         layout_current.addStretch()
@@ -193,11 +193,11 @@ class XEnA_tube_gui(QWidget):
             self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
         else:
             self.interlock_state = False
-            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
             self.field_kVset.setText("{:.3f}".format(0.))
             self.field_mAset.setText("{:.3f}".format(0.))
             self.ramp_voltage(0., kVset_ID, kVmon_ID)
             self.ramp_voltage(0., mAset_ID, mAmon_ID)
+            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
 
         try:            
             with nidaqmx.Task() as task:
@@ -214,20 +214,24 @@ class XEnA_tube_gui(QWidget):
 
 
     def set_min_voltage(self):
-        # set source setting to minimal settings: 1kV, 0.1 mA
-        self.ramp_voltage(0.1, mAset_ID, mAmon_ID)
-        self.ramp_voltage(1, kVset_ID, kVmon_ID)
+        # set source setting to minimal settings: 10kV, 0.1 mA
+        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
+        self.add_message("Tube voltage set to 10kV")
+        self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
+        self.add_message("Tube voltage set to 0.1mA")
     
     def set_max_voltage(self):
         # set source setting to minimal settings: 40kV, 2 mA
-        self.ramp_voltage(10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(0.5, mAset_ID, mAmon_ID)
-        self.ramp_voltage(20, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1., mAset_ID, mAmon_ID)
-        self.ramp_voltage(30, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1.5, mAset_ID, mAmon_ID)
-        self.ramp_voltage(40, kVset_ID, kVmon_ID)
-        self.ramp_voltage(2., mAset_ID, mAmon_ID)
+        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(0.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(20./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(1./2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(30./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(1.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(40./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(2./2*10, mAset_ID, mAmon_ID)
+        self.add_message("Tube voltage set to 40kV")
+        self.add_message("Tube voltage set to 2.0mA")
 
     
     def set_voltage(self):
@@ -237,9 +241,11 @@ class XEnA_tube_gui(QWidget):
         if voltage < 0.:
             voltage = 0.
             self.field_kVset.setText("{:.3f}".format(0.))
+            self.add_message("WARNING: tube voltage cannot be negative.")
         if voltage > 8:  #voltage limited to 40kV
             voltage = 8.
-            self.field_kVset.setText("{:.3f}".format(50.))
+            self.field_kVset.setText("{:.3f}".format(40.))
+            self.add_message("WARNING: tube voltage cannot exceed 40kV.")
 
         if self.ramp_voltage(voltage, kVset_ID, kVmon_ID) == True:
             self.add_message("Tube voltage set to "+self.field_kVset.text()+"kV")
@@ -255,9 +261,11 @@ class XEnA_tube_gui(QWidget):
         if current < 0.:
             current = 0.
             self.field_mAset.setText("{:.3f}".format(0.))
+            self.add_message("WARNING: tube current cannot be negative.")
         if current > 10:
             current = 10.
             self.field_mAset.setText("{:.3f}".format(2.))
+            self.add_message("WARNING: tube voltage cannot exceed 2mA.")
         
         if self.ramp_voltage(current, mAset_ID, mAmon_ID) == True:
             self.add_message("Tube current set to %s mA" % self.field_mAset.text())
