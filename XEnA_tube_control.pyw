@@ -215,6 +215,8 @@ class XEnA_tube_gui(QWidget):
 
     def set_min_voltage(self):
         # set source setting to minimal settings: 10kV, 0.1 mA
+        self.field_kVset.setText("{:.3f}".format(10.))
+        self.field_mAset.setText("{:.3f}".format(0.1))
         self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
         self.add_message("Tube voltage set to 10kV")
         self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
@@ -222,6 +224,8 @@ class XEnA_tube_gui(QWidget):
     
     def set_max_voltage(self):
         # set source setting to minimal settings: 40kV, 2 mA
+        self.field_kVset.setText("{:.3f}".format(40.))
+        self.field_mAset.setText("{:.3f}".format(2.))
         self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
         self.ramp_voltage(0.5/2*10, mAset_ID, mAmon_ID)
         self.ramp_voltage(20./50.*10, kVset_ID, kVmon_ID)
