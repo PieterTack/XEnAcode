@@ -37,6 +37,8 @@ def _arg_validity(*args):
         if devicename not in myVars:
             syntax = "Syntax Error: Unknown device <"+devicename+">"
             raise SyntaxError(syntax)
+            
+    return True
     
 
 # depending on cmd_base, call different functions to execute
@@ -76,7 +78,7 @@ def wa():
 
 def home(*args):
     '''Home a motor stage to the reference position \n   Syntax: home(<name1> {,<name2>, ...})'''
-    if len(args) <= 1:
+    if len(args) < 1:
         syntax = "Syntax Error: Please provide a motor name.\n    home(<name1>,{,<name2>, ...})"
         raise SyntaxError(syntax)
 
@@ -123,14 +125,13 @@ def mvr(*args, d=dspace):
         raise SyntaxError(syntax)
 
     if _arg_validity(args[::2]) is True:
-        goto_pos = list('')
         for _pidevice, step in np.asarray((args[::2],args[1::2])).T:
             if _pidevice.uname == 'energy' or _pidevice.uname == "dummy":
-                goto_pos.append(_pidevice.lastpos+step)
+                goto_pos = _pidevice.lastpos+step
             else:
                 current_pos = _pidevice.device.qPOS(_pidevice.device.axes).get("1")
-                goto_pos.append(current_pos+step)
-        mv(args[::2], goto_pos, d=d)
+                goto_pos = current_pos+step
+            mv(_pidevice, goto_pos, d=d)
 
 def ascan(*args):
     '''Perform an absolute scan by moving the specified device from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n   Syntax: ascan(<name>, <start>, <end>, <nsteps>, <time>)'''
@@ -218,8 +219,8 @@ def set(*args):
     _pidevice, _setpos = args
 
     if type(_pidevice) is type(XEnA_pi_interface.Pidevice('dummy')):
-        if _pidevice.device is not None:
-            print("At this time we do not allow the override of writing physical motor positions. Please restrain to setting dummy or energy motors.")
+        if _pidevice.device is not None:#TODO: also allow setting unreferenced motors
+            print("At this time we do not allow the override of writing physical motor positions. Please only set dummy or energy motors.")
         else:
             _pidevice.lastpos = float(_setpos)
     elif type(_pidevice) is type(Crystal()):

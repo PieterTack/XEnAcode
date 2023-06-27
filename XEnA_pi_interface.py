@@ -5,7 +5,7 @@ Created on Mon Aug 19 09:48:43 2019
 @author: prrta
 """
 
-from pipython import GCSDevice, pitools #see PIPython-1.3.4.17/docs/html/a00009.html
+from pipython import GCSDevice, pitools, GCSError #see PIPython-1.3.4.17/docs/html/a00009.html
 import json
 
 STAGES = ('M-414.3PD',)  # connect stages to axes
@@ -44,22 +44,37 @@ class Pidevice():
                 self.lastpos = float(stagedict['lastpos'])
                 self.velocity = None
             else:
+                print("")
                 print("Connecting "+stagedict['uname']+"...")
                 print("    Serial: ",stagedict['usb'], "controller: ", stagedict['controller'], "stage: ", stagedict['stage'])
                 try:
                     self.device = GCSDevice(stagedict['controller'])
                     self.device.ConnectUSB(serialnum=stagedict['usb'])
-                    print("    Switching on servo...")
+                    print("    Switching on servo...", end="")
                     self.device.SVO(self.device.axes, values=True) # switches on servo
-                    if stagedict['referenced'] == False:
-                        print("    Setting reference state to False...")
+                    print(" done.")
+                    if stagedict['referenced'] == False: #The case if we don't want to work with referenced stages
+                        print("    Setting reference state to False...", end="")
                         self.device.RON(self.device.axes,values=False)
-                    print("    Switching on velocity control...")
-                    print(self.device.qVCO(axes=self.device.axes))
-                    self.device.VCO(self.device.axes, values=True) # switches on velocity control
-                    print("    Setting velocity to ", stagedict['velocity'])
+                        print(" done.")
+                    else: #However, if they are to be referenced, we should home them now
+                        print("    Homing device...", end="")
+                        if self.device.HasFRF(): #stupid thing where HasFRF() returns True even though it's not supported by certain stages
+                            try:
+                                self.device.FRF()
+                            except GCSError:
+                                self.device.FPL()
+                        while True:
+                            if (self.device.IsControllerReady()):
+                                break
+                        print(" done.")
+                        print("    Moving stage to last known position...", end="")
+                        self.device.MOV(self.device.axes, stagedict["lastpos"])
+                        print(" done.")
+                    print("    Setting velocity to "+ str(stagedict['velocity']), end="")
                     self.device.VEL(self.device.axes, values=stagedict['velocity'])
-                    print('connected: {}'.format(self.device.qIDN().strip()))
+                    print(" done.")
+                    print('Connected: {}'.format(self.device.qIDN().strip()))
                 
                     self.uname = stagedict['uname']
                     self.usb = stagedict['usb']
@@ -69,6 +84,7 @@ class Pidevice():
                     self.velocity = float(stagedict['velocity'])       
                 except Exception as exc:
                     print("Error:", exc)
+                    print("  Device not initialised: "+ stagedict['uname'])
                     self.device = None
                     self.uname = stagedict['uname']
                     self.usb = stagedict['usb']
@@ -90,8 +106,11 @@ def XEnA_pi_init():
 
 
 def XEnA_pi_home(pidevices):    # home motors if referenced
+    if type(pidevices) != type(list()):
+        pidevices = [pidevices]
     for _pidevice in pidevices:
-        if _pidevice.device is not None and _pidevice.device.qRON(_pidevice.device.axes) == True:
+        if _pidevice.device is not None and _pidevice.device.qRON(_pidevice.device.axes).get("1") == True:
+            #TODO: add case where device is referenced although stagedict says it should not be (on user reconfirm!-->collision warning)
             _pidevice.device.FRF(_pidevice.device.axes)  # find reference switch
             while True:
                 if (_pidevice.device.IsControllerReady()):
@@ -114,6 +133,7 @@ def XEnA_store_dict(pidevices, outfile='lib/stages.json'):
             'usb': dev.usb,
             'lastpos' : dev.lastpos,
             'velocity' : dev.velocity,
+            'referenced': dev.referenced,
             'uname': dev.uname})
 
     with open(outfile, 'w+') as error:
@@ -170,7 +190,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0021550017",
 #       'lastpos' : 0,
 #       'velocity' : 5,
-#       'referenced' : True,
+#       'referenced' : False,
 #       'uname': "srcr"},
     
 #     {'controller': "C-863.11",
