@@ -73,8 +73,18 @@ def wall():
 def wa():
     '''Retreive the current position of all devices.\n    Syntax: wa()'''
     wall()
+
+def home(*args):
+    '''Home a motor stage to the reference position \n   Syntax: home(<name1> {,<name2>, ...})'''
+    if len(args) <= 1:
+        syntax = "Syntax Error: Please provide a motor name.\n    home(<name1>,{,<name2>, ...})"
+        raise SyntaxError(syntax)
+
+    for _pidevice in args:
+        if _arg_validity(_pidevice) is True:
+            XEnA_pi_interface.XEnA_pi_home(_pidevice)
     
-def mv(*args, d=dspace): #'pos' in keV, 'd' in Angstrom
+def mv(*args, d=dspace): #'pos' in keV for energy, 'd' in Angstrom
     '''Move a motor stage to the defined absolute position. \n   Syntax: mv(<name1>, <pos1> {,<name2>, <pos2>})'''
     if len(args) <= 1 or len(args) % 2 != 0:
         syntax = "Syntax Error: Please provide a motor name and position.\n    mv(<name1>, <pos1> {,<name2>, <pos2>})"

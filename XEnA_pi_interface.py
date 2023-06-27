@@ -49,12 +49,14 @@ class Pidevice():
                 try:
                     self.device = GCSDevice(stagedict['controller'])
                     self.device.ConnectUSB(serialnum=stagedict['usb'])
-                    # self.device.CLR() #reset motor
                     print("    Switching on servo...")
                     self.device.SVO(self.device.axes, values=True) # switches on servo
-                    # print("    Switching on velocity control...")
-                    # print(self.device.qVCO(axes=self.device.axes))
-                    # self.device.VCO(self.device.axes, values=True) # switches on velocity control
+                    if stagedict['referenced'] == False:
+                        print("    Setting reference state to False...")
+                        self.device.RON(self.device.axes,values=False)
+                    print("    Switching on velocity control...")
+                    print(self.device.qVCO(axes=self.device.axes))
+                    self.device.VCO(self.device.axes, values=True) # switches on velocity control
                     print("    Setting velocity to ", stagedict['velocity'])
                     self.device.VEL(self.device.axes, values=stagedict['velocity'])
                     print('connected: {}'.format(self.device.qIDN().strip()))
@@ -84,14 +86,17 @@ def XEnA_pi_init():
     for stage in stagedict:
         pidevices.append(Pidevice(stage))
 
-    # home motors
+    return pidevices
+
+
+def XEnA_pi_home(pidevices):    # home motors if referenced
     for _pidevice in pidevices:
-        if _pidevice.device is not None:
-            # _pidevice.device.FRF(_pidevice.device.axes)  # find reference switch
+        if _pidevice.device is not None and _pidevice.device.qRON(_pidevice.device.axes) == True:
+            _pidevice.device.FRF(_pidevice.device.axes)  # find reference switch
             while True:
                 if (_pidevice.device.IsControllerReady()):
+                    _pidevice.lastpos = _pidevice.device.qPOS(_pidevice.device.axes).get("1")
                     break
-    return pidevices
 
 
 def XEnA_close(pidevices):
@@ -120,6 +125,7 @@ def XEnA_read_dict(dictfile):
     return stagedict
 
 def XEnA_move(pidevice, target):
+    #pretended as an absolute move, but under the hood is a relative move to allow for movement of unreferenced stages
     if type(pidevice) != type(Pidevice('dummy')):
         syntax = "Type Error: Unknown device type <"+type(pidevice)+">"
         raise TypeError(syntax)
@@ -132,26 +138,29 @@ def XEnA_move(pidevice, target):
     if pidevice.uname == 'dummy':
         pidevice.lastpos = target
     else:
-        # move motors
-        pidevice.device.MOV(pidevice.device.axes, target)
+        # move motors in relative step to allow for unreferenced motor movement.
+        rmove = target - float(pidevice.device.qPOS(pidevice.device.axes).get("1"))
+        pidevice.device.MVR(pidevice.device.axes, rmove)
         pitools.waitontarget(pidevice.device, axes=pidevice.device.axes)
         pidevice.lastpos = target
 
-    # for i in range(len(_pidevice)):
-    #     while True:
-    #         if _pidevice[i].qONT(axes[i]).get("1") and _pidevice[i].IsControllerReady() and not _pidevice[i].IsMoving().get("1"): #TODO: it appears the query here occurs while still moving... Better option?
-    #             sleep(0.1)
-    #             print(_pidevice[i].qPOS(axes[i]).get("1"))
-    #             break
 
 
 
 #Useful commands:
+    # self.device.CLR() #Clear the status of 'axes'.
+        # The following actions are done by CLR(): Switches the servo on.
+        # Resets error to 0. If the stage has tripped a limit switch, CLR() will
+        # move it away from the limit switch until the limit condition is no
+        # longer given, and the target position is set to the current position
     # pidevice.HLT() #Halt the motion of given 'axes' smoothly.
     # pidevice.JOG() #Start motion with the given (constant) velocity for 'axes'
     # pidevice.MNL()/MPL() #Move 'axes' to negative/positive limit switch.
     # pidevice.RBT() #Reboot controller, error check will be disabled temporarily.
-    # pidevice.REF() #Reference 'axes'.
+    # pidevice.REF() #Reference 'axes'.  ==> RON(self, axes, values=None): Set referencing mode for given 'axes'.
+            #DFH(self, axes=None): Define the current positions of 'axes' as the axis home position
+            #POS()
+    # JOG(self, axes, values=None): Start motion with the given (constant) velocity for 'axes'.
     # pidevice.StopAll() (or STP()) #Stop all axes abruptly (by sending "#24")
     
 
@@ -161,6 +170,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0021550017",
 #       'lastpos' : 0,
 #       'velocity' : 5,
+#       'referenced' : True,
 #       'uname': "srcr"},
     
 #     {'controller': "C-863.11",
@@ -168,6 +178,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0195500269",
 #       'lastpos' : 150,
 #       'velocity' : 10,
+#       'referenced' : True,
 #       'uname': "srcx"},
     
 #     {'controller': "C-863.11",
@@ -175,6 +186,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0195500299",
 #       'lastpos' : 150,
 #       'velocity' : 10,
+#       'referenced' : True,
 #       'uname': "detx"},
     
 #     {'controller': "C-663.11",
@@ -182,6 +194,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0020550162",
 #       'lastpos' : 50,
 #       'velocity' : 1.5,
+#       'referenced' : True,
 #       'uname': "cryy"},
     
 #     {'controller': "C-663.11",
@@ -189,6 +202,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0020550164",
 #       'lastpos' : 50,
 #       'velocity' : 1.5,
+#       'referenced' : True,
 #       'uname': "cryz"},
     
 #     {'controller': "C-663.11",
@@ -196,6 +210,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0020550169",
 #       'lastpos' : 0,
 #       'velocity' : 5,
+#       'referenced' : False,
 #       'uname': "cryr"},
     
 #     {'controller': "C-663.12",
@@ -203,6 +218,7 @@ def XEnA_move(pidevice, target):
 #       'usb': "0021550047",
 #       'lastpos' : 0,
 #       'velocity' : 1.5,
+#       'referenced' : True,
 #       'uname': "cryt"},
 
 #     {'controller': None,
@@ -210,6 +226,7 @@ def XEnA_move(pidevice, target):
 #       'usb': None,
 #       'lastpos' : 0,
 #       'velocity' : 0,
+#       'referenced' : True,
 #       'uname': "dummy"},
 
 #     {'controller': None,
@@ -217,6 +234,7 @@ def XEnA_move(pidevice, target):
 #       'usb': None,
 #       'lastpos' : 0,
 #       'velocity' : 0,
+#       'referenced' : True,
 #       'uname': "energy"}
 #     ]
 
