@@ -9,7 +9,7 @@ This code handles the XasXes commands, as supplied by the xx_terminal
 import numpy as np
 import time as tm
 import atexit
-import XEnA_pi_interface
+import XEnA_pi_interface as Xpi
 import XEnA_tube_control
 import threading
 import signal
@@ -49,11 +49,11 @@ def wm(*args):
         raise SyntaxError(syntax)
     
     positions = list('')
-    for _pidevice in args:
-        if _pidevice.device is None:
-            positions.append(_pidevice.lastpos)
+    for _stage in args:
+        if _stage.device is None:
+            positions.append(_stage.lastpos)
         else:
-            positions.append(_pidevice.device.qPOS(_pidevice.device.axes).get("1"))
+            positions.append(Xpi.XEnA_qpos(_stage))
     print("\n    ")
     for i in range(0, len(args), 5):
         print("    "+"".join(n.uname.center(20) for n in args[i:i+5]))
@@ -61,16 +61,16 @@ def wm(*args):
 
 def wall():
     '''Retreive the current position of all devices.\n    Syntax: wall()'''
-    positions = list('')
-    for _pidevice in _devices:
-        if _pidevice.device is None:
-            positions.append(_pidevice.lastpos)
+    _positions = list('')
+    for _stage in _stages:
+        if _stage.device is None:
+            _positions.append(_stage.lastpos)
         else:
-            positions.append(_pidevice.device.qPOS(_pidevice.device.axes).get("1"))
+            _positions.append(Xpi.XEnA_qpos(_stage))
     print("\n    ")
-    for i in range(0, len(positions), 5):
-        print("    "+"".join(n.uname.center(20) for n in _devices[i:i+5]))
-        print("    "+"".join(str("%.4f" % pos).center(20) for pos in positions[i:i+5])+'\n')
+    for i in range(0, len(_positions), 5):
+        print("    "+"".join(n.uname.center(20) for n in _stages[i:i+5]))
+        print("    "+"".join(str("%.4f" % pos).center(20) for pos in _positions[i:i+5])+'\n')
 
 def wa():
     '''Retreive the current position of all devices.\n    Syntax: wa()'''
@@ -82,9 +82,9 @@ def home(*args):
         syntax = "Syntax Error: Please provide a motor name.\n    home(<name1>,{,<name2>, ...})"
         raise SyntaxError(syntax)
 
-    for _pidevice in args:
-        if _arg_validity(_pidevice) is True:
-            XEnA_pi_interface.XEnA_pi_home(_pidevice)
+    for _stage in args:
+        if _arg_validity(_stage) is True:
+            Xpi.XEnA_pi_home(_stage)
     
 def mv(*args, d=dspace): #'pos' in keV for energy, 'd' in Angstrom
     '''Move a motor stage to the defined absolute position. \n   Syntax: mv(<name1>, <pos1> {,<name2>, <pos2>})'''
@@ -93,29 +93,29 @@ def mv(*args, d=dspace): #'pos' in keV for energy, 'd' in Angstrom
         raise SyntaxError(syntax)
 
     if _arg_validity(args[::2]) is True:
-        for _pidevice, pos in np.asarray((args[::2],args[1::2])).T:
-            pos = float(pos)
-            if _pidevice.uname == 'energy':
-                sin_ang = HC/(2*pos*d.dlattice)
+        for _stage, _pos in np.asarray((args[::2],args[1::2])).T:
+            _pos = float(_pos)
+            if _stage.uname == 'energy':
+                sin_ang = HC/(2*_pos*d.dlattice)
                 if -1 < sin_ang < 1: 
                     ang_rad = np.arcsin(sin_ang)
                     ang_deg = ang_rad * 180/np.pi
                     dist = d.curvrad/np.tan(ang_rad)
-                    srcx_mv = 366 - dist
+                    srcx_mv = 366 - dist  #TODO: these values of 366, 27, 95 may be dependent on stage offsets...
                     detx_mv = srcx_mv + 27
                     print("Source angle = " + "{:.4f}".format(ang_deg) + "\n" 
                           + "Source translation = " + "{:.4f}".format(srcx_mv) 
                           + "\n" + "Detector translation = " + "{:.4f}".format(detx_mv))
                     if 95 < dist < 366:
                         mv(srcx, srcx_mv, detx, detx_mv, srcr, ang_deg, d=d)
-                        _pidevice.lastpos = pos
+                        _stage.lastpos = _pos
                     else:
                         print("ERROR: Invalid setup, position not reachable")
                 else:
                     print("Invalid setup, unobtainable Bragg angle: ", sin_ang)
             else:
-                XEnA_pi_interface.XEnA_move(_pidevice, pos)
-            XEnA_pi_interface.XEnA_store_dict(_devices)
+                Xpi.XEnA_move(_stage, _pos)
+            Xpi.XEnA_store_dict(_stages)
 
 
 def mvr(*args, d=dspace):
@@ -125,13 +125,12 @@ def mvr(*args, d=dspace):
         raise SyntaxError(syntax)
 
     if _arg_validity(args[::2]) is True:
-        for _pidevice, step in np.asarray((args[::2],args[1::2])).T:
-            if _pidevice.uname == 'energy' or _pidevice.uname == "dummy":
-                goto_pos = _pidevice.lastpos+step
+        for _stage, _step in np.asarray((args[::2],args[1::2])).T:
+            if _stage.uname == 'energy' or _stage.uname == "dummy":
+                goto_pos = _stage.lastpos+_step
             else:
-                current_pos = _pidevice.device.qPOS(_pidevice.device.axes).get("1")
-                goto_pos = current_pos+step
-            mv(_pidevice, goto_pos, d=d)
+                goto_pos = Xpi.XEnA_qpos(_stage)+_step
+            mv(_stage, goto_pos, d=d)
 
 def ascan(*args):
     '''Perform an absolute scan by moving the specified device from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n   Syntax: ascan(<name>, <start>, <end>, <nsteps>, <time>)'''
@@ -139,15 +138,15 @@ def ascan(*args):
         syntax = "Syntax Error: Incorrect number of arguments.\n    ascan(<name>, <start>, <end>, <nsteps>, <time>)"
         raise SyntaxError(syntax)
     
-    _pidevice, _start, _end, _nstep, _time = args
-    if _arg_validity(_pidevice) is True:
+    _stage, _start, _end, _nstep, _time = args
+    if _arg_validity(_stage) is True:
         _step = (_end-_start)/_nstep
-        mv(_pidevice, _start)
+        mv(_stage, _start)
         for i in range(int(_nstep)+1):
             # measure
             _data_acq(_time)
             if i < _nstep:
-                mvr(_pidevice, _step)
+                mvr(_stage, _step)
 
 def dscan(*args):
     '''Perform a relative scan by moving the specified device from rel. start pos to rel. end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n   Syntax: dscan(<name>, <rstart>, <rend>, <nsteps>, <time>)'''
@@ -155,15 +154,15 @@ def dscan(*args):
         syntax = "Syntax Error: Incorrect number of arguments.\n    dscan(<name>, <rstart>, <rend>, <nsteps>, <time>)"
         raise SyntaxError(syntax)
 
-    _pidevice, _rstart, _rend, _nstep, _time = args
-    if _arg_validity(_pidevice) is True:
-        if _pidevice.device is None:
-            _current_pos = _pidevice.lastpos
+    _stage, _rstart, _rend, _nstep, _time = args
+    if _arg_validity(_stage) is True:
+        if _stage.device is None:
+            _current_pos = _stage.lastpos
         else:
-            _current_pos = _pidevice.qPOS(_pidevice.device.axes).get("1")
-        ascan(_pidevice, _current_pos+_rstart, _current_pos+_rend, _nstep, _time)
+            _current_pos = Xpi.XEnA_qpos(_stage)
+        ascan(_stage, _current_pos+_rstart, _current_pos+_rend, _nstep, _time)
         # at end of dscan return to original position
-        mv(_pidevice, _current_pos)
+        mv(_stage, _current_pos)
 
 def mesh(*args):
     '''Perform an absolute 2D scan by moving the specified devices from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n
@@ -173,20 +172,20 @@ def mesh(*args):
         syntax = "Syntax Error: Incorrect number of arguments.\n    Syntax: mesh(<slow1>, <start1>, <end1>, <nsteps1>, <fast2>, <start2>, <end2>, <nsteps2>, <time>)"
         raise SyntaxError(syntax)
         
-    _pidevice1, _start1, _end1, _nstep1, _pidevice2, _start2, _end2, _nstep2, _time = args
+    _stage1, _start1, _end1, _nstep1, _stage2, _start2, _end2, _nstep2, _time = args
     _step1 = (_end1-_start1)/_nstep1
     _step2 = (_end2-_start2)/_nstep2
-    mv(_pidevice1, _start1, _pidevice2, _start2)
+    mv(_stage1, _start1, _stage2, _start2)
     for i in range(int(_nstep1)+1):
         for j in range(int(_nstep2)+1):
             # measure
             print("step: ",i,j)
             _data_acq(_time)
             if j < _nstep2:
-                mvr(_pidevice1, 0, _pidevice2, _step2)
+                mvr(_stage1, 0, _stage2, _step2)
             else:
                 if i < _nstep1:
-                    mv(_pidevice1, _start1+(i+1)*_step1, _pidevice2, _start2)            
+                    mv(_stage1, _start1+(i+1)*_step1, _stage2, _start2)            
     
 def dmesh(*args):
     '''Perform a relative 2D scan by moving the specified devices from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n
@@ -196,18 +195,18 @@ def dmesh(*args):
         syntax = "Syntax Error: Incorrect number of arguments.\n    Syntax: dmesh(<slow1>, <rstart1>, <rend1>, <nsteps1>, <fast2>, <rstart2>, <rend2>, <nsteps2>, <time>)"
         raise SyntaxError(syntax)
 
-    _pidevice1, _rstart1, _rend1, _nstep1, _pidevice2, _rstart2, _rend2, _nstep2, _time = args
-    if _pidevice1.device is None:
-        _current_pos1 = _pidevice1.lastpos
+    _stage1, _rstart1, _rend1, _nstep1, _stage2, _rstart2, _rend2, _nstep2, _time = args
+    if _stage1.device is None:
+        _current_pos1 = _stage1.lastpos
     else:
-        _current_pos1 = _pidevice1.device.qPOS(_pidevice1.device.axes).get("1")
-    if _pidevice2.device is None:
-        _current_pos2 = _pidevice2.lastpos
+        _current_pos1 = Xpi.XEnA_qpos(_stage1)
+    if _stage2.device is None:
+        _current_pos2 = _stage2.lastpos
     else:
-        _current_pos2 = _pidevice2.device.qPOS(_pidevice2.device.axes).get("1")
-    mesh(_pidevice1, _pidevice2, _current_pos1+_rstart1, _current_pos1+_rend1, _nstep1, _current_pos2+_rstart2, _current_pos2+_rend2, _nstep2, _time)
+        _current_pos2 = Xpi.XEnA_qpos(_stage2)
+    mesh(_stage1, _current_pos1+_rstart1, _current_pos1+_rend1, _nstep1, _stage2, _current_pos2+_rstart2, _current_pos2+_rend2, _nstep2, _time)
     # at end of dscan return to original position
-    mv(_pidevice1, _current_pos1, _pidevice2, _current_pos2)
+    mv(_stage1, _current_pos1, _stage2, _current_pos2)
     
 def set(*args):
     '''Set a device current position to the defined position.\n
@@ -216,19 +215,23 @@ def set(*args):
         syntax = "Syntax Error: Please provide a motor name and position.\n   set(<name>, <setpos>)"
         raise SyntaxError(syntax)
     
-    _pidevice, _setpos = args
+    _stage, _setpos = args
 
-    if type(_pidevice) is type(XEnA_pi_interface.Pidevice('dummy')):
-        if _pidevice.device is not None:#TODO: also allow setting unreferenced motors
-            print("At this time we do not allow the override of writing physical motor positions. Please only set dummy or energy motors.")
+    if type(_stage) is type(Xpi.Pidevice('dummy')):
+        if _stage.device is not None:  #TODO: when setting energy something more has to happen, as this implies setting detx, srcx and srcr offsets.
+            #TODO: test offset handling
+            # Instead of changing the encoder value, we'll simply redefine the offset with respect to the encoder value.
+            #   Note that in time this could become meaningless for unreferenced stages
+            _stage.lastpos = _setpos
+            _stage.offset = _setpos - Xpi.XEnA_qpos(_stage)
         else:
-            _pidevice.lastpos = float(_setpos)
-    elif type(_pidevice) is type(Crystal()):
-        _pidevice.dlattice = _setpos
+            _stage.lastpos = float(_setpos)
+    elif type(_stage) is type(Crystal()):
+        _stage.dlattice = _setpos
     else:
-        syntax = "Type Error: unknown device type: "+ str(type(_pidevice))+"\n   Please provide a Crystal() or Pidevice() object as argument."
+        syntax = "Type Error: unknown device type: "+ str(type(_stage))+"\n   Please provide a Crystal() or Pidevice() object as argument."
         raise TypeError(syntax)
-    XEnA_pi_interface.XEnA_store_dict(_devices)
+    Xpi.XEnA_store_dict(_stages)
 
         
 def crystal():
@@ -254,13 +257,13 @@ if __name__ == "__main__":
     tubethread = threading.Thread(target=XEnA_tube_control.run)
     tubethread.start()
 
-        # initiate PI devices and generate local variables for each device uname
-    _devices = XEnA_pi_interface.XEnA_pi_init()
+    # initiate PI devices and generate local variables for each device uname
+    _stages = Xpi.XEnA_pi_init()
     _myVars = locals()
-    for dev in _devices:
+    for dev in _stages:
         _myVars[dev.uname] = dev
 
 
-    atexit.register(XEnA_pi_interface.XEnA_close, _devices) #on exit of program should close all connections
+    atexit.register(Xpi.XEnA_close, _stages) #on exit of program should close all connections
     signal.signal(signal.SIGINT, _handle_ctrlc) #stop motors
     

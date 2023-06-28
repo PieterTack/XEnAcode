@@ -7,6 +7,7 @@ Created on Mon Aug 19 09:48:43 2019
 
 from pipython import GCSDevice, pitools, GCSError #see PIPython-1.3.4.17/docs/html/a00009.html
 import json
+import sys
 
 STAGES = ('M-414.3PD',)  # connect stages to axes
 REFMODE = ('FNL',)  # reference the connected stages
@@ -59,14 +60,7 @@ class Pidevice():
                         print(" done.")
                     else: #However, if they are to be referenced, we should home them now
                         print("    Homing device...", end="")
-                        if self.device.HasFRF(): #stupid thing where HasFRF() returns True even though it's not supported by certain stages
-                            try:
-                                self.device.FRF()
-                            except GCSError:
-                                self.device.FPL()
-                        while True:
-                            if (self.device.IsControllerReady()):
-                                break
+                        _pi_home(self)
                         print(" done.")
                         print("    Moving stage to last known position...", end="")
                         self.device.MOV(self.device.axes, stagedict["lastpos"])
@@ -96,45 +90,78 @@ class Pidevice():
 
 
 def XEnA_pi_init():
-    pidevices = list('')
+    stages = list('')
     # go through stagedict and initiate each stage
     stagedict = XEnA_read_dict('lib/stages.json')
     for stage in stagedict:
-        pidevices.append(Pidevice(stage))
+        stages.append(Pidevice(stage))
 
-    return pidevices
+    return stages
+
+def _pi_home(stage):
+    if stage.device.HasFRF(): #stupid thing where HasFRF() returns True even though it's not supported by certain stages
+        try:
+            stage.device.FRF()
+        except GCSError:
+            stage.device.FPL()
+    while True:
+        if (stage.device.IsControllerReady()):
+            break
+    
+
+def XEnA_pi_home(stages):    # home motors if referenced
+    if type(stages) != type(list()):
+        stages = [stages]
+    for stage in stages:
+        if stage.device is not None: 
+            if stage.device.qRON(stage.device.axes).get("1") == True:
+                # stage should be safe to home
+                sys.stdout.write("Homing stage %s ..." %stage.uname)
+                _pi_home(stage)
+                stage.lastpos = XEnA_qpos(stage)
+                sys.stdout.write(" done.\n")
+            else:
+                # Homing a stage that was listed as not referenced may be dangerous in terms of collisions within the setup... request user input
+                valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
+                sys.stdout.write("WARNING: Homing unreferenced stages may result in instrumental collisions.\n Are you sure you wish to continue homing? [y/N]")
+                choice = input().lower()
+                if choice == "": #Default no homing
+                    sys.stdout.write("Omitted homing stage %s .\n" %stage.uname)
+                elif choice in valid:
+                    if valid[choice] is True:
+                        #continue homing
+                        sys.stdout.write("Homing stage %s ..." %stage.uname)
+                        _pi_home(stage)
+                        stage.lastpos = XEnA_qpos(stage)
+                        sys.stdout.write(" done.\n")
+                    else:
+                        sys.stdout.write("Omitted homing stage %s .\n" %stage.uname)
+                else:
+                    sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
+                    
+def XEnA_qpos(stage):
+    return float(stage.device.qPOS(stage.device.axes).get("1"))+stage.offset
+
+def XEnA_close(stages):
+    print("Disconnecting stages...", end="")
+    for stage in stages:
+        stage.device.CloseConnection()
+    print(" done.")
+    XEnA_store_dict(stages) 
 
 
-def XEnA_pi_home(pidevices):    # home motors if referenced
-    if type(pidevices) != type(list()):
-        pidevices = [pidevices]
-    for _pidevice in pidevices:
-        if _pidevice.device is not None and _pidevice.device.qRON(_pidevice.device.axes).get("1") == True:
-            #TODO: add case where device is referenced although stagedict says it should not be (on user reconfirm!-->collision warning)
-            _pidevice.device.FRF(_pidevice.device.axes)  # find reference switch
-            while True:
-                if (_pidevice.device.IsControllerReady()):
-                    _pidevice.lastpos = _pidevice.device.qPOS(_pidevice.device.axes).get("1")
-                    break
-
-
-def XEnA_close(pidevices):
-    for dev in pidevices:
-        dev.device.CloseConnection()
-    XEnA_store_dict(pidevices) 
-
-
-def XEnA_store_dict(pidevices, outfile='lib/stages.json'):
+def XEnA_store_dict(stages, outfile='lib/stages.json'):
     stagedict = list('')
-    for dev in pidevices:
+    for stage in stages:
         stagedict.append({
-            'controller': dev.controller,
-            'stage' : dev.stage,
-            'usb': dev.usb,
-            'lastpos' : dev.lastpos,
-            'velocity' : dev.velocity,
-            'referenced': dev.referenced,
-            'uname': dev.uname})
+            'controller': stage.controller,
+            'stage' : stage.stage,
+            'usb': stage.usb,
+            'lastpos' : stage.lastpos,
+            'offset' : stage.offset,
+            'velocity' : stage.velocity,
+            'referenced': stage.referenced,
+            'uname': stage.uname})
 
     with open(outfile, 'w+') as error:
         json.dump(stagedict, error)
@@ -144,25 +171,24 @@ def XEnA_read_dict(dictfile):
        stagedict = json.loads(data_file.read())
     return stagedict
 
-def XEnA_move(pidevice, target):
+def XEnA_move(stage, target):
     #pretended as an absolute move, but under the hood is a relative move to allow for movement of unreferenced stages
-    if type(pidevice) != type(Pidevice('dummy')):
-        syntax = "Type Error: Unknown device type <"+type(pidevice)+">"
+    if type(stage) != type(Pidevice('dummy')):
+        syntax = "Type Error: Unknown device type <"+type(stage)+">"
         raise TypeError(syntax)
         
-    if pidevice.device is None:
-        syntax = "Key Error: device not appropriately initialised: "+pidevice.uname
+    if stage.device is None:
+        syntax = "Key Error: device not appropriately initialised: "+stage.uname
         raise KeyError(syntax)
-        
 
-    if pidevice.uname == 'dummy':
-        pidevice.lastpos = target
+    if stage.uname == 'dummy':
+        stage.lastpos = target
     else:
         # move motors in relative step to allow for unreferenced motor movement.
-        rmove = target - float(pidevice.device.qPOS(pidevice.device.axes).get("1"))
-        pidevice.device.MVR(pidevice.device.axes, rmove)
-        pitools.waitontarget(pidevice.device, axes=pidevice.device.axes)
-        pidevice.lastpos = target
+        rmove = target - XEnA_qpos(stage)
+        stage.device.MVR(stage.device.axes, rmove)
+        pitools.waitontarget(stage.device, axes=stage.device.axes)
+        stage.lastpos = target
 
 
 
@@ -189,14 +215,16 @@ def XEnA_move(pidevice, target):
 #       'stage' : "M-061.DG",
 #       'usb': "0021550017",
 #       'lastpos' : 0,
+#       'offset' : 0,           #NOTE: stage_position + offset = lastpos
 #       'velocity' : 5,
-#       'referenced' : False,
+#       'referenced' : False,   #NOTE: setting referenced to True will reference the stage on initialisation, which could cause collisions in some cases!
 #       'uname': "srcr"},
     
 #     {'controller': "C-863.11",
 #       'stage' : "M-414.3PD",
 #       'usb': "0195500269",
 #       'lastpos' : 150,
+#       'offset' : 0,
 #       'velocity' : 10,
 #       'referenced' : True,
 #       'uname': "srcx"},
@@ -205,6 +233,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : "M-414.3PD",
 #       'usb': "0195500299",
 #       'lastpos' : 150,
+#       'offset' : 0,
 #       'velocity' : 10,
 #       'referenced' : True,
 #       'uname': "detx"},
@@ -213,6 +242,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : "M-404.42S",
 #       'usb': "0020550162",
 #       'lastpos' : 50,
+#       'offset' : 0,
 #       'velocity' : 1.5,
 #       'referenced' : True,
 #       'uname': "cryy"},
@@ -221,6 +251,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : "M-404.42S",
 #       'usb': "0020550164",
 #       'lastpos' : 50,
+#       'offset' : 0,
 #       'velocity' : 1.5,
 #       'referenced' : True,
 #       'uname': "cryz"},
@@ -229,6 +260,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : "64439200",
 #       'usb': "0020550169",
 #       'lastpos' : 0,
+#       'offset' : 0,
 #       'velocity' : 5,
 #       'referenced' : False,
 #       'uname': "cryr"},
@@ -237,6 +269,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : "65409200-0000",
 #       'usb': "0021550047",
 #       'lastpos' : 0,
+#       'offset' : 0,
 #       'velocity' : 1.5,
 #       'referenced' : True,
 #       'uname': "cryt"},
@@ -245,6 +278,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : None,
 #       'usb': None,
 #       'lastpos' : 0,
+#       'offset' : 0,
 #       'velocity' : 0,
 #       'referenced' : True,
 #       'uname': "dummy"},
@@ -253,6 +287,7 @@ def XEnA_move(pidevice, target):
 #       'stage' : None,
 #       'usb': None,
 #       'lastpos' : 0,
+#       'offset' : 0,
 #       'velocity' : 0,
 #       'referenced' : True,
 #       'uname': "energy"}
