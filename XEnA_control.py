@@ -18,7 +18,7 @@ import signal
 R_CRYSTAL = 500. # mm
 D_SI440 = 0.960 # Angstrom
 D_SI331 = 1.246 # Angstrom
-HC = 12.39 # keV*A
+HC = 12.398 # keV*A
 
 class Crystal():
     def __init__(self, dlattice=D_SI440, curvrad=R_CRYSTAL):
@@ -28,7 +28,33 @@ class Crystal():
 srcx, srcr, detx = None, None, None #just defining these as None to get rid of warnings in mv(energy) code
 dspace = Crystal()
 
+def EtoMotPos(energy, d=dspace, verbose=True):
+    sin_ang = HC/(2*energy*d.dlattice)
+    if -1 < sin_ang < 1: 
+        srcr_rad = np.arcsin(sin_ang)
+        srcr_deg = srcr_rad * 180/np.pi
+        dist = d.curvrad/np.tan(srcr_rad)
+        srcx_pos = 366 - dist  # these values are related to mechanical offsets of the instrument
+        detx_pos = srcx_pos + 27
+        if verbose:
+            print("srcr encoder position = " + "{:.4f}".format(srcr_deg) + "\n" 
+                  + "srcx encoder position = " + "{:.4f}".format(srcx_pos) 
+                  + "\n" + "detx encoder position = " + "{:.4f}".format(detx_pos)
+                  + "\n" + "Relative distance = " + "{:.4f}".format(2*dist))
+        return (srcx_pos, detx_pos, srcr_deg, dist)  #returns the theoretical positions (encoder values) of the motors
+    else:
+        raise ValueError("ERROR: Unreachable energy for this crystal. Sin(theta): %s" %sin_ang)
 
+def MotPostoE(d=dspace): #Note: this function only provides estimate energy position, 
+            #as it does not take into account the srcr or physical crystal position
+    # detx_pos = Xpi.XEnA_qpos(detx)
+    srcx_pos = Xpi.XEnA_qpos(srcx)
+    dist = 366 - srcx_pos  # these values are related to mechanical offsets of the instrument
+    srcr_rad = np.arctan(d.curvrad/dist)
+    sin_ang = np.sin(srcr_rad)
+    energy = HC/(2*sin_ang*d.dlattice)
+    print("Estimated current energy = %.4f" % energy)
+    return energy
 
 def _arg_validity(*args):
     for _pidevice in args:
@@ -96,27 +122,19 @@ def mv(*args, d=dspace): #'pos' in keV for energy, 'd' in Angstrom
         for _stage, _pos in np.asarray((args[::2],args[1::2])).T:
             _pos = float(_pos)
             if _stage.uname == 'energy':
-                sin_ang = HC/(2*_pos*d.dlattice)
-                if -1 < sin_ang < 1: 
-                    ang_rad = np.arcsin(sin_ang)
-                    ang_deg = ang_rad * 180/np.pi
-                    dist = d.curvrad/np.tan(ang_rad)
-                    srcx_mv = 366 - dist  #TODO: these values of 366, 27, 95 may be dependent on stage offsets...
-                    detx_mv = srcx_mv + 27
-                    print("Source angle = " + "{:.4f}".format(ang_deg) + "\n" 
-                          + "Source translation = " + "{:.4f}".format(srcx_mv) 
-                          + "\n" + "Detector translation = " + "{:.4f}".format(detx_mv))
-                    if 95 < dist < 366:
-                        mv(srcx, srcx_mv, detx, detx_mv, srcr, ang_deg, d=d)
+                try:
+                    srcx_pos, detx_pos, srcr_pos, dist = EtoMotPos(_pos, verbose=False) #returns the theoretical encoder positions, 
+                    if 95 < dist < 366: # these values are related to physical encoder stage limits (collisions etc.)
+                        #   consider user-supplied offset for further move
+                        mv(srcx, srcx_pos+srcx.offset, detx, detx_pos+detx.offset, srcr, srcr_pos+srcr.offset, d=d)
                         _stage.lastpos = _pos
                     else:
-                        print("ERROR: Invalid setup, position not reachable")
-                else:
-                    print("Invalid setup, unobtainable Bragg angle: ", sin_ang)
+                        raise ValueError("ERROR: moving energy out of bounds. Collision potential! Dist: %s" %dist)
+                except ValueError as er:
+                    print(er)
             else:
                 Xpi.XEnA_move(_stage, _pos)
             Xpi.XEnA_store_dict(_stages)
-
 
 def mvr(*args, d=dspace):
     '''Move a motor stage to the defined relative position. \n   Syntax: mvr(<name1>, <pos1> {,<name2>, <pos2>})'''
@@ -218,12 +236,20 @@ def set(*args):
     _stage, _setpos = args
 
     if type(_stage) is type(Xpi.Pidevice('dummy')):
-        if _stage.device is not None:  #TODO: when setting energy something more has to happen, as this implies setting detx, srcx and srcr offsets.
+        if _stage.device is not None:
             #TODO: test offset handling
             # Instead of changing the encoder value, we'll simply redefine the offset with respect to the encoder value.
             #   Note that in time this could become meaningless for unreferenced stages
-            _stage.lastpos = _setpos
+            _stage.lastpos = float(_setpos)
             _stage.offset = _setpos - Xpi.XEnA_qpos(_stage)
+        elif _stage.uname == "energy": # when setting energy, this implies setting detx, srcx and srcr offsets.
+            try:
+                srcx_pos, detx_pos, srcr_pos, _ = EtoMotPos(_setpos)
+                set(srcx, srcx_pos)
+                set(detx, detx_pos)
+                set(srcr, srcr_pos)
+            except ValueError as er:
+                print(er)
         else:
             _stage.lastpos = float(_setpos)
     elif type(_stage) is type(Crystal()):
