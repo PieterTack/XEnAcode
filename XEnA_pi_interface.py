@@ -215,7 +215,7 @@ def XEnA_move(stage, target):
 #       'stage' : "M-061.DG",
 #       'usb': "0021550017",
 #       'lastpos' : 0,
-#       'offset' : 0,           #NOTE: stage_position + offset = lastpos
+#       'offset' : 0,           #NOTE: stage_position + offset = lastpos  AKA: encoder+offset=user value
 #       'velocity' : 5,
 #       'referenced' : False,   #NOTE: setting referenced to True will reference the stage on initialisation, which could cause collisions in some cases!
 #       'uname': "srcr"},
