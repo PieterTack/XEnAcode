@@ -36,6 +36,7 @@ mAmon_ID = "Dev1/ai4"
 kVset_ID = "Dev1/ao0"
 mAset_ID = "Dev1/ao1"
 interlock_ID = "Dev1/port2/line0"
+ILmon_ID = "Dev1/port1/line0"
 
 
 class XEnA_tube_gui(QWidget):
@@ -55,12 +56,19 @@ class XEnA_tube_gui(QWidget):
 
         self.label_main = QLabel("XEnA Source Control")
         layout_main.addWidget(self.label_main)
-        #TODO: preset buttons (40kV and shutdown)
         
         with nidaqmx.Task() as task:
             task.do_channels.add_do_chan(interlock_ID)
             self.interlock_state = task.read()
+            task.wait_until_done()
         self.switch_interlock = QPushButton()
+        # check if interlocks are interrupted
+        with nidaqmx.Task() as task:
+            task.di_channels.add_di_chan(ILmon_ID)
+            value = task.read()
+            task.wait_until_done()
+        if value is True:
+            self.interlock_state = False
         if self.interlock_state is False:
             self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
         else:
@@ -156,6 +164,10 @@ class XEnA_tube_gui(QWidget):
                 task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE) #mA monitor
                 task.read()
                 task.wait_until_done()
+            with nidaqmx.Task() as task:
+                task.di_channels.add_di_chan(ILmon_ID) #interlock monitor: High->interlock broken
+                task.read()
+                task.wait_until_done()
         except Exception as ex:
             self.add_message("----------------")
             self.add_message(str(ex))
@@ -186,6 +198,32 @@ class XEnA_tube_gui(QWidget):
                     self.field_kVmon.setText("{:.3f}".format(np.average(voltage)))
                 except Exception:
                     pass
+                try:
+                    with nidaqmx.Task() as task:
+                        task.di_channels.add_di_chan(ILmon_ID) #interlock monitor: High->interlock broken
+                        value = task.read()
+                        task.wait_until_done()
+                    if value is True and self.interlock_state is True:
+                        self.interlock_state = False
+                        self.add_message("========")
+                        self.add_message("**ERROR: Interlock is interrupted. Are any doors open or is power cut?")
+                        with nidaqmx.Task() as task:
+                            task.do_channels.add_do_chan(interlock_ID)
+                            task.write(self.interlock_state, auto_start=True)
+                            task.wait_until_done()
+                        self.field_kVset.setText("{:.3f}".format(0.))
+                        self.field_mAset.setText("{:.3f}".format(0.))
+                        with nidaqmx.Task() as task:
+                            task.ao_channels.add_ao_voltage_chan(mAset_ID)
+                            task.write(0., auto_start=True)
+                            task.wait_until_done()
+                        with nidaqmx.Task() as task:
+                            task.ao_channels.add_ao_voltage_chan(kVset_ID)
+                            task.write(0., auto_start=True)
+                            task.wait_until_done()
+                        self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
+                except:
+                    pass
 
     def toggle_interlock(self):
         if self.interlock_state is False: # if interlock off, set voltage to 0. If on set voltage to 5
@@ -208,7 +246,31 @@ class XEnA_tube_gui(QWidget):
             self.add_message("----------------")
             self.add_message(str(ex))
             self.add_message("========")
-            self.add_message("**ERROR: Could not connect to digital output channel Dev1/port2/line0")
+            self.add_message("**ERROR: Could not connect to digital output channel "+interlock_ID)
+            self.monitor = True
+            return
+
+        #check whether interlock is properly closed (i.e. if physical door interlocks are closed etc.)
+        try:
+            with nidaqmx.Task() as task:
+                task.di_channels.add_di_chan(ILmon_ID) #interlock monitor: High->interlock broken
+                value = task.read()
+                task.wait_until_done()
+            if value is True and self.interlock_state is True:
+                # door interlocks must be interrupted
+                self.interlock_state = False
+                self.add_message("========")
+                self.add_message("**ERROR: Interlock is interrupted. Are any doors open or is power cut?")
+                with nidaqmx.Task() as task:
+                    task.do_channels.add_do_chan(interlock_ID)
+                    task.write(self.interlock_state, auto_start=True)
+                    task.wait_until_done()
+                self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
+        except Exception as ex:
+            self.add_message("----------------")
+            self.add_message(str(ex))
+            self.add_message("========")
+            self.add_message("**ERROR: Could not connect to digital input channel "+ILmon_ID)
             self.monitor = True
             return
 
