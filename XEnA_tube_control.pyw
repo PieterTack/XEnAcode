@@ -36,7 +36,7 @@ mAmon_ID = "Dev1/ai4"
 kVset_ID = "Dev1/ao0"
 mAset_ID = "Dev1/ao1"
 interlock_ID = "Dev1/port2/line0"
-ILmon_ID = "Dev1/port1/line0"
+ILmon_ID = "Dev1/port1/line3"
 
 
 class XEnA_tube_gui(QWidget):
