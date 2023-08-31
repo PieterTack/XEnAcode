@@ -35,6 +35,8 @@ class Pidevice():
                 self.controller = None
                 self.lastpos = 0
                 self.velocity = None
+                self.offset = 0
+                self.referenced = False
         else:
             if stagedict['uname'] == 'dummy' or stagedict['uname'] == 'energy':
                 self.device = None
@@ -44,6 +46,8 @@ class Pidevice():
                 self.controller = None
                 self.lastpos = float(stagedict['lastpos'])
                 self.velocity = None
+                self.offset = float(stagedict['offset'])
+                self.referenced = stagedict['referenced']
             else:
                 print("")
                 print("Connecting "+stagedict['uname']+"...")
@@ -76,6 +80,8 @@ class Pidevice():
                     self.controller = stagedict['controller']
                     self.lastpos = float(stagedict['lastpos'])
                     self.velocity = float(stagedict['velocity'])       
+                    self.offset = float(stagedict['offset'])
+                    self.referenced = stagedict['referenced']
                 except Exception as exc:
                     print("Error:", exc)
                     print("  Device not initialised: "+ stagedict['uname'])
@@ -86,6 +92,8 @@ class Pidevice():
                     self.controller = stagedict['controller']
                     self.lastpos = float(stagedict['lastpos'])
                     self.velocity = float(stagedict['velocity'])      
+                    self.offset = float(stagedict['offset'])
+                    self.referenced = stagedict['referenced']
                     
 
 
@@ -280,7 +288,7 @@ def XEnA_move(stage, target):
 #       'lastpos' : 0,
 #       'offset' : 0,
 #       'velocity' : 0,
-#       'referenced' : True,
+#       'referenced' : False,
 #       'uname': "dummy"},
 
 #     {'controller': None,
@@ -289,7 +297,7 @@ def XEnA_move(stage, target):
 #       'lastpos' : 0,
 #       'offset' : 0,
 #       'velocity' : 0,
-#       'referenced' : True,
+#       'referenced' : False,
 #       'uname': "energy"}
 #     ]
 

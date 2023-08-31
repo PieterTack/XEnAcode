@@ -32,7 +32,7 @@ def EtoMotPos(energy, d=dspace, verbose=True):
     sin_ang = HC/(2*energy*d.dlattice)
     if -1 < sin_ang < 1: 
         srcr_rad = np.arcsin(sin_ang)
-        srcr_deg = srcr_rad * 180/np.pi
+        srcr_deg = (srcr_rad * 180/np.pi)-90.
         dist = d.curvrad/np.tan(srcr_rad)
         srcx_pos = 366 - dist  # these values are related to mechanical offsets of the instrument
         detx_pos = srcx_pos + 27
