@@ -20,9 +20,9 @@ Created on Mon May 31 08:49:47 2021
 
 import sys
 from PyQt5.QtCore import Qt, QSize, QCoreApplication
-from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap
+from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap, QMessageBox
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
-    QLabel, QLineEdit, QScrollArea, QPushButton
+    QLabel, QLineEdit, QScrollArea, QPushButton, QRadioButton
 
 
 import time
@@ -116,7 +116,7 @@ class XEnA_tube_gui(QWidget):
         layout_current.addStretch()
         layout_main.addLayout(layout_current)
         
-        self.message_win = QLabel('Connecting...')
+        self.message_win = QLabel('Connecting... Wait 10s for initialisation...')
         font2 = self.font()
         font2.setPointSize(10)
         self.message_win.setFont(font2)
@@ -132,6 +132,14 @@ class XEnA_tube_gui(QWidget):
         layout_main.addLayout(layout_messages)
         self.scroll_win.verticalScrollBar().rangeChanged.connect(lambda: self.scroll_win.verticalScrollBar().setValue(self.scroll_win.verticalScrollBar().maximum())) # Set scrollbar to max value when range changed
 
+        rampbar = QHBoxLayout()
+        self.ramp_fast = QRadioButton("Fast Ramp")
+        rampbar.addWidget(self.ramp_fast)
+        self.ramp_slow = QRadioButton("Slow Ramp")
+        rampbar.addWidget(self.ramp_slow)
+        self.ramp_slow.setChecked(True)
+        rampbar.addStretch()
+        layout_main.addLayout(rampbar)
         
         # set dialog layout
         self.setLayout(layout_main)
@@ -227,8 +235,10 @@ class XEnA_tube_gui(QWidget):
 
     def toggle_interlock(self):
         if self.interlock_state is False: # if interlock off, set voltage to 0. If on set voltage to 5
-            self.interlock_state = True
-            self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
+            # warning for water cooling
+            if QMessageBox.question(self,'', "Confirm if detector water cooling is on:", QMessageBox.Yes | QMessageBox.No) is QMessageBox.Yes:
+                self.interlock_state = True
+                self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
         else:
             self.interlock_state = False
             self.field_kVset.setText("{:.3f}".format(0.))
@@ -279,22 +289,27 @@ class XEnA_tube_gui(QWidget):
         # set source setting to minimal settings: 10kV, 0.1 mA
         self.field_kVset.setText("{:.3f}".format(10.))
         self.field_mAset.setText("{:.3f}".format(0.1))
-        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
-        self.add_message("Tube voltage set to 10kV")
         self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
         self.add_message("Tube voltage set to 0.1mA")
+        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
+        self.add_message("Tube voltage set to 10kV")
     
-    def set_max_voltage(self):
+    def set_max_voltage(self):          
         # set source setting to minimal settings: 40kV, 2 mA
         self.field_kVset.setText("{:.3f}".format(40.))
         self.field_mAset.setText("{:.3f}".format(2.))
         self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(0.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
         self.ramp_voltage(20./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1./2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(0.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(25./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(0.75/2*10, mAset_ID, mAmon_ID)
         self.ramp_voltage(30./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1.5/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(1./2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(35./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(1.25/2*10, mAset_ID, mAmon_ID)
         self.ramp_voltage(40./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(1.5/2*10, mAset_ID, mAmon_ID)
         self.ramp_voltage(2./2*10, mAset_ID, mAmon_ID)
         self.add_message("Tube voltage set to 40kV")
         self.add_message("Tube voltage set to 2.0mA")
@@ -351,11 +366,16 @@ class XEnA_tube_gui(QWidget):
             
             if setpoint <= current_volt:
                 incr = -0.2
+                rampup = False
             else:
                 incr = 0.2
+                rampup = True
+
             n_incr = int(np.floor((setpoint - current_volt)/incr))
             set_voltage = (np.arange(n_incr)+1)*incr + current_volt
             
+            src_volt_previous = 0
+            src_curr_previous = 0
             for i in range(n_incr):
                 with nidaqmx.Task() as task:
                     task.ao_channels.add_ao_voltage_chan(address_set)
@@ -367,14 +387,53 @@ class XEnA_tube_gui(QWidget):
                     task.wait_until_done()
                 
                 if address_mon == kVmon_ID:
-                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*50.) +" kV")
-                    self.field_kVmon.setText("{:.3f}".format(current_volt/10.*50.))
+                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*50.) +" kV (goal: "+"{:.2f}".format(setpoint/10.*50.)+" kV)")
+                    self.field_kVmon.setText("{:.3f}".format(current_volt/10.*50.))                       
                 elif address_mon == mAmon_ID:
-                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*2.) +" mA")
+                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*2.) +" mA (goal: "+"{:.2f}".format(setpoint/10.*2.)+" mA)")
                     self.field_mAmon.setText("{:.3f}".format(current_volt/10.*2.))
-                time.sleep(5)
-                #TODO: give feedback in GUI on progress
-               
+                time.sleep(1)
+
+                # Implement some longer wait times when crossing certain voltage and current settings during ramping up
+                if rampup is True:
+                        
+                    with nidaqmx.Task() as task:
+                        task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE)
+                        src_volt = task.read()
+                        task.wait_until_done()
+                    src_volt *= 5.
+                    with nidaqmx.Task() as task:
+                        task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE)
+                        src_curr = task.read()
+                        task.wait_until_done()
+                    src_curr *= 0.2
+                    
+                    if address_mon == kVmon_ID: #are only ramping voltage now
+                        if src_volt_previous < 10. and src_volt >= 10.:
+                            self.waitawhile()
+                        elif src_volt_previous < 20. and src_volt >= 20.:
+                            self.waitawhile()
+                        elif src_volt_previous < 30. and src_volt >= 30.:
+                            self.waitawhile()
+                        elif src_volt_previous < 35. and src_volt >= 35.:
+                            self.waitawhile()
+                        elif src_volt_previous < 39.5 and src_volt >= 39.5:
+                            self.waitawhile()
+                    elif address_mon == mAmon_ID: #are only ramping current now
+                        if src_curr_previous < 0.1 and src_curr >= 0.1:
+                            self.waitawhile()
+                        elif src_curr_previous < 0.5 and src_curr >= 0.5:
+                            self.waitawhile()
+                        elif src_curr_previous < 1.0 and src_curr >= 1.0:
+                            self.waitawhile()
+                        elif src_curr_previous < 1.25 and src_curr >= 1.25:
+                            self.waitawhile()
+                        elif src_curr_previous < 1.5 and src_curr >= 1.5:
+                            self.waitawhile()
+                    src_volt_previous = src_volt
+                    src_curr_previous = src_curr
+                    
+
             with nidaqmx.Task() as task:
                 task.ao_channels.add_ao_voltage_chan(address_set)
                 task.write(setpoint, auto_start=True)
@@ -390,6 +449,15 @@ class XEnA_tube_gui(QWidget):
             self.add_message("========")
             self.monitor = True
             return False
+
+    def waitawhile(self):
+        if self.ramp_slow.isChecked() is True:
+            waittime = 300
+        else:
+            waittime = 20
+
+        self.add_message("\t\tStabilising source for %i seconds." % waittime)
+        time.sleep(waittime)
 
     def add_message(self, text):
         output = self.message_win.text()
