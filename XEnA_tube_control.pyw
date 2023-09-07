@@ -243,8 +243,8 @@ class XEnA_tube_gui(QWidget):
             self.interlock_state = False
             self.field_kVset.setText("{:.3f}".format(0.))
             self.field_mAset.setText("{:.3f}".format(0.))
-            self.ramp_voltage(0., kVset_ID, kVmon_ID)
-            self.ramp_voltage(0., mAset_ID, mAmon_ID)
+            self.ramp_voltage(0., kVset_ID)
+            self.ramp_voltage(0., mAset_ID)
             self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_off.gif")))
 
         try:            
@@ -289,28 +289,28 @@ class XEnA_tube_gui(QWidget):
         # set source setting to minimal settings: 10kV, 0.1 mA
         self.field_kVset.setText("{:.3f}".format(10.))
         self.field_mAset.setText("{:.3f}".format(0.1))
-        self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(0.1/2*10, mAset_ID)
         self.add_message("Tube voltage set to 0.1mA")
-        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
+        self.ramp_voltage(10./50.*10, kVset_ID)
         self.add_message("Tube voltage set to 10kV")
     
     def set_max_voltage(self):          
         # set source setting to minimal settings: 40kV, 2 mA
         self.field_kVset.setText("{:.3f}".format(40.))
         self.field_mAset.setText("{:.3f}".format(2.))
-        self.ramp_voltage(10./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(0.1/2*10, mAset_ID, mAmon_ID)
-        self.ramp_voltage(20./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(0.5/2*10, mAset_ID, mAmon_ID)
-        self.ramp_voltage(25./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(0.75/2*10, mAset_ID, mAmon_ID)
-        self.ramp_voltage(30./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1./2*10, mAset_ID, mAmon_ID)
-        self.ramp_voltage(35./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1.25/2*10, mAset_ID, mAmon_ID)
-        self.ramp_voltage(40./50.*10, kVset_ID, kVmon_ID)
-        self.ramp_voltage(1.5/2*10, mAset_ID, mAmon_ID)
-        self.ramp_voltage(2./2*10, mAset_ID, mAmon_ID)
+        self.ramp_voltage(10./50.*10, kVset_ID)
+        self.ramp_voltage(0.1/2*10, mAset_ID)
+        self.ramp_voltage(20./50.*10, kVset_ID)
+        self.ramp_voltage(0.5/2*10, mAset_ID)
+        self.ramp_voltage(25./50.*10, kVset_ID)
+        self.ramp_voltage(0.75/2*10, mAset_ID)
+        self.ramp_voltage(30./50.*10, kVset_ID)
+        self.ramp_voltage(1./2*10, mAset_ID)
+        self.ramp_voltage(35./50.*10, kVset_ID)
+        self.ramp_voltage(1.25/2*10, mAset_ID)
+        self.ramp_voltage(40./50.*10, kVset_ID)
+        self.ramp_voltage(1.5/2*10, mAset_ID)
+        self.ramp_voltage(2./2*10, mAset_ID)
         self.add_message("Tube voltage set to 40kV")
         self.add_message("Tube voltage set to 2.0mA")
 
@@ -328,7 +328,7 @@ class XEnA_tube_gui(QWidget):
             self.field_kVset.setText("{:.3f}".format(40.))
             self.add_message("WARNING: tube voltage cannot exceed 40kV.")
 
-        if self.ramp_voltage(voltage, kVset_ID, kVmon_ID) == True:
+        if self.ramp_voltage(voltage, kVset_ID) == True:
             self.add_message("Tube voltage set to "+self.field_kVset.text()+"kV")
             return True
         else:
@@ -348,16 +348,21 @@ class XEnA_tube_gui(QWidget):
             self.field_mAset.setText("{:.3f}".format(2.))
             self.add_message("WARNING: tube voltage cannot exceed 2mA.")
         
-        if self.ramp_voltage(current, mAset_ID, mAmon_ID) == True:
+        if self.ramp_voltage(current, mAset_ID) == True:
             self.add_message("Tube current set to %s mA" % self.field_mAset.text())
             return True
         else:
             self.add_message("**ERROR: could not set tube current to "+self.field_mAset.text()+"mA")
             return False
 
-    def ramp_voltage(self, setpoint, address_set, address_mon):
+    def ramp_voltage(self, setpoint, address_set):
         try:
             self.monitor = False #temporarily make the monitor stop monitoring to avoid nidaq errors
+
+            if address_set == kVset_ID:
+                address_mon = kVmon_ID
+            elif address_set == mAset_ID:
+                address_mon = mAmon_ID
 
             with nidaqmx.Task() as task:
                 task.ai_channels.add_ai_voltage_chan(address_mon, terminal_config = TerminalConfiguration.RSE)
@@ -382,32 +387,26 @@ class XEnA_tube_gui(QWidget):
                     task.write(set_voltage[i], auto_start=True)
                     task.wait_until_done()
                 with nidaqmx.Task() as task:
-                    task.ai_channels.add_ai_voltage_chan(address_mon, terminal_config = TerminalConfiguration.RSE)
-                    current_volt = task.read()
+                    task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE)
+                    src_volt = task.read()
                     task.wait_until_done()
+                src_volt *= 5.
+                with nidaqmx.Task() as task:
+                    task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE)
+                    src_curr = task.read()
+                    task.wait_until_done()
+                src_curr *= 0.2
                 
                 if address_mon == kVmon_ID:
-                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*50.) +" kV (goal: "+"{:.2f}".format(setpoint/10.*50.)+" kV)")
-                    self.field_kVmon.setText("{:.3f}".format(current_volt/10.*50.))                       
+                    self.add_message("\tRamped to "+"{:.2f}".format(src_volt) +" kV (goal: "+"{:.2f}".format(setpoint/10.*50.)+" kV)")
+                    self.field_kVmon.setText("{:.3f}".format(src_volt))                       
                 elif address_mon == mAmon_ID:
-                    self.add_message("\tRamped to "+"{:.2f}".format(current_volt/10.*2.) +" mA (goal: "+"{:.2f}".format(setpoint/10.*2.)+" mA)")
-                    self.field_mAmon.setText("{:.3f}".format(current_volt/10.*2.))
+                    self.add_message("\tRamped to "+"{:.2f}".format(src_curr) +" mA (goal: "+"{:.2f}".format(setpoint/10.*2.)+" mA)")
+                    self.field_mAmon.setText("{:.3f}".format(src_curr))
                 time.sleep(1)
 
                 # Implement some longer wait times when crossing certain voltage and current settings during ramping up
                 if rampup is True:
-                        
-                    with nidaqmx.Task() as task:
-                        task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE)
-                        src_volt = task.read()
-                        task.wait_until_done()
-                    src_volt *= 5.
-                    with nidaqmx.Task() as task:
-                        task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE)
-                        src_curr = task.read()
-                        task.wait_until_done()
-                    src_curr *= 0.2
-                    
                     if address_mon == kVmon_ID: #are only ramping voltage now
                         if src_volt_previous < 10. and src_volt >= 10.:
                             self.waitawhile()
@@ -430,8 +429,8 @@ class XEnA_tube_gui(QWidget):
                             self.waitawhile()
                         elif src_curr_previous < 1.5 and src_curr >= 1.5:
                             self.waitawhile()
-                    src_volt_previous = src_volt
-                    src_curr_previous = src_curr
+                src_volt_previous = src_volt
+                src_curr_previous = src_curr
                     
 
             with nidaqmx.Task() as task:
