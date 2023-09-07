@@ -22,7 +22,7 @@ import sys
 from PyQt5.QtCore import Qt, QSize, QCoreApplication
 from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
-    QLabel, QLineEdit, QScrollArea, QPushButton
+    QLabel, QLineEdit, QScrollArea, QPushButton, QRadioButton, QGridLayout
 
 
 import time
@@ -132,6 +132,12 @@ class XEnA_tube_gui(QWidget):
         layout_main.addLayout(layout_messages)
         self.scroll_win.verticalScrollBar().rangeChanged.connect(lambda: self.scroll_win.verticalScrollBar().setValue(self.scroll_win.verticalScrollBar().maximum())) # Set scrollbar to max value when range changed
 
+        ramp_layout = QGridLayout()
+        self.ramp_speed = QRadioButton("Fast Ramp")
+        ramp_layout.addWidget(self.ramp_speed, 0, 0)
+        self.ramp_speed = QRadioButton("Slow Ramp")
+        ramp_layout.addWidget(self.ramp_speed, 0, 1)
+        layout_main.addLayout(ramp_layout)
         
         # set dialog layout
         self.setLayout(layout_main)
