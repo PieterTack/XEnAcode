@@ -22,7 +22,7 @@ import sys
 from PyQt5.QtCore import Qt, QSize, QCoreApplication
 from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap, QMessageBox
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
-    QLabel, QLineEdit, QScrollArea, QPushButton, QRadioButton, QGridLayout
+    QLabel, QLineEdit, QScrollArea, QPushButton, QRadioButton
 
 
 import time
@@ -116,7 +116,7 @@ class XEnA_tube_gui(QWidget):
         layout_current.addStretch()
         layout_main.addLayout(layout_current)
         
-        self.message_win = QLabel('Connecting...')
+        self.message_win = QLabel('Connecting... Wait 10s for initialisation...')
         font2 = self.font()
         font2.setPointSize(10)
         self.message_win.setFont(font2)
