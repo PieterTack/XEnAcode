@@ -20,9 +20,9 @@ Created on Mon May 31 08:49:47 2021
 
 import sys
 from PyQt5.QtCore import Qt, QSize, QCoreApplication
-from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap, QMessageBox
+from PyQt5.QtGui import QDoubleValidator, QIcon, QPixmap
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout,\
-    QLabel, QLineEdit, QScrollArea, QPushButton, QRadioButton
+    QLabel, QLineEdit, QScrollArea, QPushButton, QRadioButton, QMessageBox
 
 
 import time
@@ -236,7 +236,7 @@ class XEnA_tube_gui(QWidget):
     def toggle_interlock(self):
         if self.interlock_state is False: # if interlock off, set voltage to 0. If on set voltage to 5
             # warning for water cooling
-            if QMessageBox.question(self,'', "Confirm if detector water cooling is on:", QMessageBox.Yes | QMessageBox.No) is QMessageBox.Yes:
+            if QMessageBox.question(self,'', "Confirm if detector water cooling is on:", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
                 self.interlock_state = True
                 self.switch_interlock.setIcon(QIcon(QPixmap("icons/Interlock_on.gif")))
         else:
@@ -286,33 +286,60 @@ class XEnA_tube_gui(QWidget):
 
 
     def set_min_voltage(self):
-        # set source setting to minimal settings: 10kV, 0.1 mA
-        self.field_kVset.setText("{:.3f}".format(10.))
-        self.field_mAset.setText("{:.3f}".format(0.1))
-        self.ramp_voltage(0.1/2*10, mAset_ID)
-        self.add_message("Tube voltage set to 0.1mA")
-        self.ramp_voltage(10./50.*10, kVset_ID)
-        self.add_message("Tube voltage set to 10kV")
+        if self.interlock_state is True: #only do so if interlock switched on!
+            # set source setting to minimal settings: 10kV, 0.1 mA
+            self.field_kVset.setText("{:.3f}".format(10.))
+            self.field_mAset.setText("{:.3f}".format(0.1))
+            self.ramp_voltage(0.1/2*10, mAset_ID)
+            self.add_message("Tube voltage set to 0.1mA")
+            self.ramp_voltage(10./50.*10, kVset_ID)
+            self.add_message("Tube voltage set to 10kV")
     
     def set_max_voltage(self):          
-        # set source setting to minimal settings: 40kV, 2 mA
-        self.field_kVset.setText("{:.3f}".format(40.))
-        self.field_mAset.setText("{:.3f}".format(2.))
-        self.ramp_voltage(10./50.*10, kVset_ID)
-        self.ramp_voltage(0.1/2*10, mAset_ID)
-        self.ramp_voltage(20./50.*10, kVset_ID)
-        self.ramp_voltage(0.5/2*10, mAset_ID)
-        self.ramp_voltage(25./50.*10, kVset_ID)
-        self.ramp_voltage(0.75/2*10, mAset_ID)
-        self.ramp_voltage(30./50.*10, kVset_ID)
-        self.ramp_voltage(1./2*10, mAset_ID)
-        self.ramp_voltage(35./50.*10, kVset_ID)
-        self.ramp_voltage(1.25/2*10, mAset_ID)
-        self.ramp_voltage(40./50.*10, kVset_ID)
-        self.ramp_voltage(1.5/2*10, mAset_ID)
-        self.ramp_voltage(2./2*10, mAset_ID)
-        self.add_message("Tube voltage set to 40kV")
-        self.add_message("Tube voltage set to 2.0mA")
+        if self.interlock_state is True: #only do so if interlock switched on!
+            # set source setting to minimal settings: 40kV, 2 mA
+            with nidaqmx.Task() as task:
+                task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE)
+                src_volt = task.read()
+                task.wait_until_done()
+            src_volt *= 5.
+            with nidaqmx.Task() as task:
+                task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE)
+                src_curr = task.read()
+                task.wait_until_done()
+            src_curr *= 0.2
+
+            self.field_kVset.setText("{:.3f}".format(40.))
+            self.field_mAset.setText("{:.3f}".format(2.))
+            # a lot of ifs to prevent unnecessary ramping down (i.e. start from where the source currently is set)
+            if src_volt < 10.:
+                self.ramp_voltage(10./50.*10, kVset_ID)
+            if src_curr < 0.1:
+                self.ramp_voltage(0.1/2*10, mAset_ID)
+            if src_volt < 20.:
+                self.ramp_voltage(20./50.*10, kVset_ID)
+            if src_curr < 0.5:
+                self.ramp_voltage(0.5/2*10, mAset_ID)
+            if src_volt < 25.:
+                self.ramp_voltage(25./50.*10, kVset_ID)
+            if src_curr < 0.75:
+                self.ramp_voltage(0.75/2*10, mAset_ID)
+            if src_volt < 30.:
+                self.ramp_voltage(30./50.*10, kVset_ID)
+            if src_curr < 1.:
+                self.ramp_voltage(1./2*10, mAset_ID)
+            if src_volt < 35.:
+                self.ramp_voltage(35./50.*10, kVset_ID)
+            if src_curr < 1.25:
+                self.ramp_voltage(1.25/2*10, mAset_ID)
+            if src_volt < 40.:
+                self.ramp_voltage(40./50.*10, kVset_ID)
+            if src_curr < 1.5:
+                self.ramp_voltage(1.5/2*10, mAset_ID)
+            if src_curr < 2.:
+                self.ramp_voltage(2./2*10, mAset_ID)
+            self.add_message("Tube voltage set to 40kV")
+            self.add_message("Tube voltage set to 2.0mA")
 
     
     def set_voltage(self):
@@ -406,7 +433,7 @@ class XEnA_tube_gui(QWidget):
                 time.sleep(1)
 
                 # Implement some longer wait times when crossing certain voltage and current settings during ramping up
-                if rampup is True:
+                if rampup is True and i != 0:
                     if address_mon == kVmon_ID: #are only ramping voltage now
                         if src_volt_previous < 10. and src_volt >= 10.:
                             self.waitawhile()
@@ -455,7 +482,7 @@ class XEnA_tube_gui(QWidget):
         else:
             waittime = 20
 
-        self.add_message("\t\tStabilising source for %i seconds." % waittime)
+        self.add_message("\t  *Stabilising source for %i seconds." % waittime)
         time.sleep(waittime)
 
     def add_message(self, text):
