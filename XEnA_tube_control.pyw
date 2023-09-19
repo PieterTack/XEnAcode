@@ -298,21 +298,46 @@ class XEnA_tube_gui(QWidget):
     def set_max_voltage(self):          
         if self.interlock_state is True: #only do so if interlock switched on!
             # set source setting to minimal settings: 40kV, 2 mA
+            with nidaqmx.Task() as task:
+                task.ai_channels.add_ai_voltage_chan(kVmon_ID, terminal_config = TerminalConfiguration.RSE)
+                src_volt = task.read()
+                task.wait_until_done()
+            src_volt *= 5.
+            with nidaqmx.Task() as task:
+                task.ai_channels.add_ai_voltage_chan(mAmon_ID, terminal_config = TerminalConfiguration.RSE)
+                src_curr = task.read()
+                task.wait_until_done()
+            src_curr *= 0.2
+
             self.field_kVset.setText("{:.3f}".format(40.))
             self.field_mAset.setText("{:.3f}".format(2.))
-            self.ramp_voltage(10./50.*10, kVset_ID)
-            self.ramp_voltage(0.1/2*10, mAset_ID)
-            self.ramp_voltage(20./50.*10, kVset_ID)
-            self.ramp_voltage(0.5/2*10, mAset_ID)
-            self.ramp_voltage(25./50.*10, kVset_ID)
-            self.ramp_voltage(0.75/2*10, mAset_ID)
-            self.ramp_voltage(30./50.*10, kVset_ID)
-            self.ramp_voltage(1./2*10, mAset_ID)
-            self.ramp_voltage(35./50.*10, kVset_ID)
-            self.ramp_voltage(1.25/2*10, mAset_ID)
-            self.ramp_voltage(40./50.*10, kVset_ID)
-            self.ramp_voltage(1.5/2*10, mAset_ID)
-            self.ramp_voltage(2./2*10, mAset_ID)
+            # a lot of ifs to prevent unnecessary ramping down (i.e. start from where the source currently is set)
+            if src_volt < 10.:
+                self.ramp_voltage(10./50.*10, kVset_ID)
+            if src_curr < 0.1:
+                self.ramp_voltage(0.1/2*10, mAset_ID)
+            if src_volt < 20.:
+                self.ramp_voltage(20./50.*10, kVset_ID)
+            if src_curr < 0.5:
+                self.ramp_voltage(0.5/2*10, mAset_ID)
+            if src_volt < 25.:
+                self.ramp_voltage(25./50.*10, kVset_ID)
+            if src_curr < 0.75:
+                self.ramp_voltage(0.75/2*10, mAset_ID)
+            if src_volt < 30.:
+                self.ramp_voltage(30./50.*10, kVset_ID)
+            if src_curr < 1.:
+                self.ramp_voltage(1./2*10, mAset_ID)
+            if src_volt < 35.:
+                self.ramp_voltage(35./50.*10, kVset_ID)
+            if src_curr < 1.25:
+                self.ramp_voltage(1.25/2*10, mAset_ID)
+            if src_volt < 40.:
+                self.ramp_voltage(40./50.*10, kVset_ID)
+            if src_curr < 1.5:
+                self.ramp_voltage(1.5/2*10, mAset_ID)
+            if src_curr < 2.:
+                self.ramp_voltage(2./2*10, mAset_ID)
             self.add_message("Tube voltage set to 40kV")
             self.add_message("Tube voltage set to 2.0mA")
 
