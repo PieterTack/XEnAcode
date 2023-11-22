@@ -8,11 +8,12 @@ This code handles the XasXes commands, as supplied by the xx_terminal
 
 import numpy as np
 import time as tm
-import atexit
 import XEnA_pi_interface as Xpi
 import XEnA_tube_control
 import threading
 import signal
+import time
+import sys
 
 
 R_CRYSTAL = 500. # mm
@@ -276,7 +277,14 @@ def _data_acq(time):
 
 def _handle_ctrlc():
     print("ctrl+c event registered")
-
+    
+def _handle_exit():
+    print("Shutting down XEnA...")
+    # disconnecting stages
+    Xpi.XEnA_close(_stages)
+    # let's hold for 10seconds and then close all the rest.
+    time.sleep(10)
+    sys.exit()
 
 if __name__ == "__main__":
     #start tube control window spawn
@@ -290,6 +298,6 @@ if __name__ == "__main__":
         _myVars[dev.uname] = dev
 
 
-    atexit.register(Xpi.XEnA_close, _stages) #on exit of program should close all connections
+    signal.signal(signal.SIGTERM, _handle_exit)
     signal.signal(signal.SIGINT, _handle_ctrlc) #stop motors
     

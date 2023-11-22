@@ -1,0 +1,7 @@
+lib/handel.dll
+lib/handel.lib
+lib/msvcr100.dll
+lib/xia_usb2.dll
+lib/xw.dll
+__pycache__/*.pyc
+__pycache__
