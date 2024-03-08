@@ -9,17 +9,68 @@ This code handles the XasXes commands, as supplied by the xx_terminal
 import numpy as np
 import time as tm
 import XEnA_pi_interface as Xpi
+import XEnA_pndet_interface as Xpn
 import XEnA_tube_control
 import threading
+import multiprocessing
 import signal
 import time
 import sys
+import datetime
+import os
 
 
 R_CRYSTAL = 500. # mm
 D_SI440 = 0.960 # Angstrom
 D_SI331 = 1.246 # Angstrom
 HC = 12.398 # keV*A
+
+class General():
+    def __init__(self):
+        self._basedir = "D:/Data/"
+        self._session = 'default/'
+        today = datetime.now()
+        self._savedir = self._basedir +today.strftime('%Y%m%d')+'/'+self._session
+
+        
+    @property 
+    def basedir(self):
+        return self._basedir
+    
+    @property 
+    def savedir(self):
+        return self._savedir
+
+    @savedir.setter
+    def savedir(self, value:str):
+        if not value.endswith('/'):
+            value += '/'
+        self._savedir = value
+        print(f"Save directory set to {self.savedir}.")
+        
+    @property 
+    def session(self):
+        return self._session
+
+    @session.setter
+    def session(self, value:str):
+        if not value.endswith('/'):
+            value += '/'
+        self._session = value
+        
+        today = datetime.now()
+        self.savedir = self.basedir +today.strftime('%Y%m%d')+'/'+self.session
+
+        print(f"Current session: {self.session}.")
+        # list of directories in folder self.session that starts with 'scan'
+        dirs = [item for item in os.listdir(self.savedir) if os.path.isdir(self.savedir+item) and item.startswith('scan_')]
+        if dirs == []:
+            self.scanid = 0
+        else:
+            scanids = [int(idx.split('_')[1]) for idx in dirs]
+            self.scanid = max(scanids)+1
+
+        print(f"\tNext data will be stored in {self.savedir}scan_{self.scanid:04d}/")    
 
 class Crystal():
     def __init__(self, dlattice=D_SI440, curvrad=R_CRYSTAL):
@@ -67,6 +118,9 @@ def _arg_validity(*args):
             
     return True
     
+def newsession(name:str):
+   general.session = name
+   
 
 # depending on cmd_base, call different functions to execute
 def wm(*args):
@@ -273,7 +327,24 @@ def crystal():
 
     
 def _data_acq(time):
-    tm.sleep(time)
+    if any([det.connected for det in _detectors]):
+        #detectors should all be triggered simultaneously
+        active_dets = [det for det in _detectors if det.connected is True]
+        procs = []
+        for _det in active_dets:
+            p = multiprocessing.Process(target=_det.acq, args=(time))
+            procs.append(p)
+            p.start()
+        #wait for all processes to end
+        for p in procs:
+            p.join()
+        #now we need to do something with the data...
+        if os.path.isdir(f"{general.savedir}scan_{general.scanid:04d}/") is False:
+            os.mkdir(general.savedir)
+        
+        
+    else:
+        tm.sleep(time)
 
 def _handle_ctrlc():
     print("ctrl+c event registered")
@@ -296,6 +367,13 @@ if __name__ == "__main__":
     _myVars = locals()
     for dev in _stages:
         _myVars[dev.uname] = dev
+    _detectors = Xpn.PNDet() # for now we only have 1 detector that we would incorporate as such, so no need to specify a list etc.
+    if _detectors.connected is True:
+        _myVars[_detectors.uname] = _detectors
+    
+    # Initialise data storage
+    general = General()
+    newsession('test') # create an initial new session 'test' so data (if any) will be stored in some sensical location
 
 
     signal.signal(signal.SIGTERM, _handle_exit)
