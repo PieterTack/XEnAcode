@@ -30,6 +30,7 @@ import nidaqmx  # pip install nidaqmx, https://itom.bitbucket.io/plugindoc/plugi
 from nidaqmx.constants import TerminalConfiguration
 import threading
 import numpy as np
+import threading
 
 kVmon_ID = "Dev1/ai0"
 mAmon_ID = "Dev1/ai4"
@@ -496,11 +497,23 @@ class XEnA_tube_gui(QWidget):
         self.thread.join()
         event.accept()
 
-def run():
-    app = QApplication(sys.argv)
-    xena_tube = XEnA_tube_gui()
-    xena_tube.show()
-    sys.exit(app.exec_())    
+# def run():
+#     app = QApplication(sys.argv)
+#     xena_tube = XEnA_tube_gui()
+#     xena_tube.show()
+#     sys.exit(app.exec_())    
+
+class RunTubeGui(threading.Thread):
+    #constructor
+    def __init__(self):
+        #execute the base constructor
+        threading.Thread.__init__(self)
+    
+    def run(self):
+        app = QApplication(sys.argv)
+        self.xena_tube = XEnA_tube_gui()
+        self.xena_tube.show()
+        sys.exit(app.exec_())
     
 if __name__ == "__main__":
     app = QApplication(sys.argv)
