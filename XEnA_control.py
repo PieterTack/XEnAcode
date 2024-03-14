@@ -32,15 +32,15 @@ class General():
         self._session = 'default/'
         today = datetime.now()
         self._savedir = self._basedir +today.strftime('%Y%m%d')+'/'+self._session
-        self._lastscan = ''
+        self._lastscancmd = ''
 
     @property 
-    def lastscan(self):
-        return self._lastscan
+    def lastscancmd(self):
+        return self._lastscancmd
     
-    @lastscan.setter 
-    def lastscan(self, value:str):
-        self._lastscan = value
+    @lastscancmd.setter 
+    def lastscancmd(self, value:str):
+        self._lastscancmd = value
         
     @property 
     def basedir(self):
@@ -220,7 +220,7 @@ def ascan(*args):
         syntax = "Syntax Error: Incorrect number of arguments.\n    ascan(<name>, <start>, <end>, <nsteps>, <time>)"
         raise SyntaxError(syntax)
     
-    general.lastscan = f"ascan {' '.join(args)}"
+    general.lastscancmd = f"ascan {' '.join(args)}"
     _stage, _start, _end, _nstep, _time = args
     if _arg_validity(_stage) is True:
         _step = (_end-_start)/_nstep
@@ -256,7 +256,7 @@ def mesh(*args):
         syntax = "Syntax Error: Incorrect number of arguments.\n    Syntax: mesh(<slow1>, <start1>, <end1>, <nsteps1>, <fast2>, <start2>, <end2>, <nsteps2>, <time>)"
         raise SyntaxError(syntax)
         
-    general.lastscan = f"mesh {' '.join(args)}"
+    general.lastscancmd = f"mesh {' '.join(args)}"
     _stage1, _start1, _end1, _nstep1, _stage2, _start2, _end2, _nstep2, _time = args
     _step1 = (_end1-_start1)/_nstep1
     _step2 = (_end2-_start2)/_nstep2
@@ -339,6 +339,44 @@ def crystal():
         suffix =  '(D_SI331)'
     print("    The current crystal dspace is: "+"{:.4f}".format(dspace.dlattice) +" Angström. "+suffix)
 
+def _data_store(filename, data):
+        if os.path.isfile(filename): #append if file exists, otherwise overwrite
+            with h5py.File(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5", 'a') as h5:
+                h5['mot1'].resize((h5['mot1'].shape[0]+1), axis=0)
+                h5['mot1'][-1] = data['motXpos']
+                h5['mot2'].resize((h5['mot2'].shape[0]+1), axis=0)
+                h5['mot2'][-1] = data['motYpos']
+                h5['raw/I0'].resize((h5['raw/I0'].shape[0]+1), axis=0)
+                h5['raw/I0'][-1] = float(tubethread.xena_tube.field_mAmon.text())
+                h5['raw/acquisition_time'].resize((h5['raw/acquisition_time'].shape[0]+1), axis=0)
+                h5['raw/acquisition_time'][-1] = data['realtime_s']
+                for index, det in enumerate(data['active_detectors']):
+                    h5[f'raw/channel{index:02d}/spectra'].resize((h5[f'raw/channel{index:2d}/spectra'].shape[0]+1, h5[f'raw/channel{index:2d}/spectra'].shape[1]), axis=0)
+                    h5[f'raw/channel{index:02d}/spectra'][-1,:] = np.asarray(data['spe'][index])
+                    h5[f'raw/channel{index:02d}/icr'].resize((h5[f'raw/channel{index:2d}/icr'].shape[0]+1), axis=0)
+                    h5[f'raw/channel{index:02d}/icr'][-1] = data['icr'][index]
+                    h5[f'raw/channel{index:02d}/ocr'].resize((h5[f'raw/channel{index:2d}/ocr'].shape[0]+1), axis=0)
+                    h5[f'raw/channel{index:02d}/ocr'][-1] = data['ocr'][index]
+                    h5[f'raw/channel{index:02d}/sumspec'] += data['spe'][index]
+                    for chnl in range(len(data['spe'][index])):
+                        h5[f'raw/channel{index:02d}/maxspec'][chnl] = max(h5[f'raw/channel{index:2d}/spectra'][:,chnl])
+        else:
+            with h5py.File(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5", 'w') as h5:
+                h5.create_dataset('cmd', data=data['command'])
+                h5.create_dataset('raw/I0', data=float(tubethread.xena_tube.field_mAmon.text()), compression='gzip', compression_opts=4, maxshape=(None,))
+                dset = h5.create_dataset('mot1', data=data['motXpos'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                dset.attrs['Name'] = data['motX']
+                dset = h5.create_dataset('mot2', data=data['motYpos'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                dset.attrs['Name'] = data['motY']
+                h5.create_dataset('raw/acquisition_time', data=data['realtime_s'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,)) 
+                for index, det in enumerate(data['active_detectors']):
+                    h5.create_dataset(f'raw/channel{index:02d}/spectra', data=np.asarray(data['spe'][index]), compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                    h5.create_dataset(f'raw/channel{index:02d}/icr', data=data['icr'][index], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                    h5.create_dataset(f'raw/channel{index:02d}/ocr', data=data['ocr'][index], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                    h5.create_dataset(f'raw/channel{index:02d}/sumspec', data=np.asarray(data['spe'][index]), compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                    h5.create_dataset(f'raw/channel{index:02d}/maxspec', data=np.asarray(data['spe'][index]), compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
+                    dset = h5[f'raw/channel{index:02d}']
+                    dset.attrs['DetName'] = det
     
 def _data_acq(time):
     if any([det.connected for det in _detectors]):
@@ -357,48 +395,25 @@ def _data_acq(time):
             os.mkdir(general.savedir)
         
         #check if scan file already exists, if so append data, else create now file with maxshape=(None,)
-        cmd = general.lastscan.strsplit(' ')
+        cmd = general.lastscancmd.strsplit(' ')
         mot1 = cmd[1]
         if len(cmd) > 6:
             mot2 = cmd[5]
         else:
             mot2 = mot1
-        if os.path.isfile(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5"):
-            with h5py.File(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5", 'a') as h5:
-                h5['mot1'].resize((h5['mot1'].shape[0]+1), axis=0)
-                h5['mot1'][-1] = exec(f"Xpi.XEnA_qpos({mot1})")
-                h5['mot2'].resize((h5['mot2'].shape[0]+1), axis=0)
-                h5['mot2'][-1] = exec(f"Xpi.XEnA_qpos({mot2})")
-                h5['raw/I0'].resize((h5['raw/I0'].shape[0]+1), axis=0)
-                h5['raw/I0'][-1] = float(tubethread.xena_tube.field_mAmon.text())
-                h5['raw/acquisition_time'].resize((h5['raw/acquisition_time'].shape[0]+1), axis=0)
-                h5['raw/acquisition_time'][-1] = active_dets[0].data['realtime_s']
-                for index, _det in enumerate(active_dets):
-                    h5[f'raw/channel{index:2d}/spectra'].resize((h5[f'raw/channel{index:2d}/spectra'].shape[0]+1, h5[f'raw/channel{index:2d}/spectra'].shape[1]), axis=0)
-                    h5[f'raw/channel{index:2d}/spectra'][-1,:] = np.asarray(_det.data['spe_cts']).reshape((1,len(_det.data['spe_cts'])))
-                    h5[f'raw/channel{index:2d}/icr'].resize((h5[f'raw/channel{index:2d}/icr'].shape[0]+1), axis=0)
-                    h5[f'raw/channel{index:2d}/icr'][-1] = _det.data['icr_cps']
-                    h5[f'raw/channel{index:2d}/ocr'].resize((h5[f'raw/channel{index:2d}/ocr'].shape[0]+1), axis=0)
-                    h5[f'raw/channel{index:2d}/ocr'][-1] = _det.data['ocr_cps']
-                    h5[f'raw/channel{index:2d}/sumspec'] += _det.data['spe_cts']
-                    for chnl in range(len(_det.data['spe_cts'])):
-                        h5[f'raw/channel{index:2d}/maxspec'] = max(h5[f'raw/channel{index:2d}/spectra'][:,chnl])
-        else:
-            with h5py.File(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5", 'w') as h5:
-                h5.create_dataset('cmd', data=general.lastscan)
-                h5.create_dataset('raw/I0', data=float(tubethread.xena_tube.field_mAmon.text()), compression='gzip', compression_opts=4, maxshape=(None,))
-                dset = h5.create_dataset('mot1', data=exec(f"Xpi.XEnA_qpos({mot1})"), compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-                dset.attrs['Name'] = mot1
-                dset = h5.create_dataset('mot2', data=exec(f"Xpi.XEnA_qpos({mot2})"), compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-                dset.attrs['Name'] = mot2
-                h5.create_dataset('raw/acquisition_time', data=active_dets[0].data['realtime_s'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,)) #TODO: could be that just using tm of first detector is not the best idea... see how these times differ for different detectors
-                for index, _det in enumerate(active_dets):
-                    h5.create_dataset(f'raw/channel{index:2d}/spectra', data=np.asarray(_det.data['spe_cts']).reshape((1,len(_det.data['spe_cts']))), compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-                    h5.create_dataset(f'raw/channel{index:2d}/icr', data=_det.data['icr_cps'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-                    h5.create_dataset(f'raw/channel{index:2d}/ocr', data=_det.data['ocr_cps'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-                    h5.create_dataset(f'raw/channel{index:2d}/sumspec', data=_det.data['spe_cts'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-                    h5.create_dataset(f'raw/channel{index:2d}/maxspec', data=_det.data['spe_cts'], compression='gzip', compression_opts=4, chunks=True, maxshape=(None,))
-
+            
+        data = {'command' : general.lastscancmd,
+                'motXpos': exec(f"Xpi.XEnA_qpos({mot1})"),
+                'motYpos': exec(f"Xpi.XEnA_qpos({mot2})"),
+                'motX' : mot1,
+                'motY' : mot2,
+                'realtime_s' : active_dets[0].data['realtime_s'],  #TODO: could be that just using tm of first detector is not the best idea... see how these times differ for different detectors
+                'active_detectors' : [det.uname for det in active_dets],
+                'spe' : [det.data['spe_cts'] for det in active_dets],
+                'icr' : [det.data['icr'] for det in active_dets],
+                'ocr' : [det.data['ocr'] for det in active_dets]
+                }
+        _data_store(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5", data)
         
     else:
         tm.sleep(time)
