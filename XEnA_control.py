@@ -214,6 +214,17 @@ def mvr(*args, d=dspace):
                 goto_pos = Xpi.XEnA_qpos(_stage)+_step
             mv(_stage, goto_pos, d=d)
 
+def cnt(time:float):
+    '''Count for a given amount of seconds. Data will be stored for the active detectors.'''
+    count(time)
+
+def count(time:float):
+    '''Count for a given amount of seconds. Data will be stored for the active detectors.'''
+
+    general.lastscancmd = f"count {time}"
+    _data_acq(time)
+    
+
 def ascan(*args):
     '''Perform an absolute scan by moving the specified device from start pos to end pos in a discrete amount of steps, acquiring <time> seconds at each position.\n   Syntax: ascan(<name>, <start>, <end>, <nsteps>, <time>)'''
     if len(args) != 5 :
@@ -339,7 +350,7 @@ def crystal():
         suffix =  '(D_SI331)'
     print("    The current crystal dspace is: "+"{:.4f}".format(dspace.dlattice) +" Angström. "+suffix)
 
-def _data_store(filename, data):
+def _data_store(filename, data:dict):
         if os.path.isfile(filename): #append if file exists, otherwise overwrite
             with h5py.File(f"{general.savedir}scan_{general.scanid:04d}/scan_{general.scanid:04d}.h5", 'a') as h5:
                 h5['mot1'].resize((h5['mot1'].shape[0]+1), axis=0)
@@ -396,15 +407,19 @@ def _data_acq(time):
         
         #check if scan file already exists, if so append data, else create now file with maxshape=(None,)
         cmd = general.lastscancmd.strsplit(' ')
-        mot1 = cmd[1]
-        if len(cmd) > 6:
-            mot2 = cmd[5]
+        if cmd[1] != 'count':
+            mot1 = cmd[1]
+            if len(cmd) > 6:
+                mot2 = cmd[5]
+            else:
+                mot2 = mot1
         else:
-            mot2 = mot1
+            mot1 = 'energy'
+            mot2 = 'detx'
             
         data = {'command' : general.lastscancmd,
-                'motXpos': exec(f"Xpi.XEnA_qpos({mot1})"),
-                'motYpos': exec(f"Xpi.XEnA_qpos({mot2})"),
+                'motXpos': exec(f"{mot1}.lastpos"),
+                'motYpos': exec(f"{mot2}.lastpos"),
                 'motX' : mot1,
                 'motY' : mot2,
                 'realtime_s' : active_dets[0].data['realtime_s'],  #TODO: could be that just using tm of first detector is not the best idea... see how these times differ for different detectors
